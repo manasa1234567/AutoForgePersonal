@@ -60,6 +60,13 @@
         @switch (currentBuild.stage) {
           @case ('Understand') {
             <div class="stage-body">
+              @if (currentBuild.status === 'Running') {
+                <div class="analysis-loading" role="status" aria-live="polite">
+                  <div class="spinner" aria-hidden="true"></div>
+                  <h3>Analyzing your request…</h3>
+                  <p>The Spec Agent is extracting requirements, acceptance criteria, and dependencies. This can take a little while.</p>
+                </div>
+              } @else {
               <div class="source-banner"><span>{{ sourceLabel }}</span><strong>{{ currentBuild.sourceText }}</strong></div>
               <div class="agent-result-banner">
                 <div><strong>Spec Agent completed</strong><span>{{ currentBuild.requirementSummary }}</span></div>
@@ -76,8 +83,9 @@
                 <div><strong>Acceptance criteria</strong>@for (criterion of currentBuild.acceptanceCriteria; track criterion) { <span>✓ {{ criterion }}</span> }</div>
                 <div><strong>Dependencies</strong>@for (dependency of currentBuild.dependencies; track dependency) { <span>• {{ dependency }}</span> }</div>
               </div>
-              <div class="stage-footer"><button class="secondary-button" type="button" [disabled]="isRefiningRequirements" (click)="refine()">{{ isRefiningRequirements ? 'Refining requirements…' : 'Refine with AI' }}</button>@if (currentBuild.approvalGate === 'requirements') { <button class="primary-button" type="button" [disabled]="isRefiningRequirements" (click)="approve('requirements')">Approve &amp; Continue →</button> }</div>
+              <div class="stage-footer"><button class="secondary-button" type="button" [disabled]="isRefiningRequirements" (click)="refine()">{{ isRefiningRequirements ? 'Refining requirements…' : 'Refine with AI' }}</button>@if (currentBuild.approvalGate === 'requirements') { <button class="primary-button" type="button" [disabled]="isRefiningRequirements || approvingGate !== null" (click)="approve('requirements')">{{ approvingGate === 'requirements' ? 'Approving…' : 'Approve and Continue →' }}</button> }</div>
               @if (refineMessage) { <p class="inline-success" role="status">{{ refineMessage }}</p> }
+              }
             </div>
           }
 
@@ -107,8 +115,8 @@
                 @if (blueprint.assumptions.length > 0) { <div class="reasoning"><h3>Assumptions</h3>@for (assumption of blueprint.assumptions; track assumption) { <span>- {{ assumption }}</span> }</div> }
                 @if (blueprint.openQuestions.length > 0) { <div class="reasoning"><h3>Open decisions</h3>@for (question of blueprint.openQuestions; track question) { <span>- {{ question }}</span> }</div> }
                 <div class="stage-footer">
-                  <button class="secondary-button" type="button" [disabled]="isSavingBlueprint" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
-                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint" (click)="saveBlueprint(true)">Save &amp; Approve Blueprint &rarr;</button>
+                  <button class="secondary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
+                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint(true)">{{ approvingGate === 'blueprint' ? 'Approving blueprint…' : 'Save and Approve Blueprint →' }}</button>
                 </div>
               }
             </div>
@@ -196,7 +204,7 @@
                     }
                   </div>
                 }
-                @if (currentBuild.approvalGate === 'skill') { <div class="approval-banner"><div><strong>Human approval required</strong><span>Review the validation result before promoting the reusable skill.</span></div><button class="primary-button" type="button" (click)="approve('skill')">Approve Skill Promotion &rarr;</button></div> }
+                @if (currentBuild.approvalGate === 'skill') { <div class="approval-banner"><div><strong>Human approval required</strong><span>Review the validation result before promoting the reusable skill.</span></div><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('skill')">{{ approvingGate === 'skill' ? 'Approving…' : 'Approve Skill Promotion →' }}</button></div> }
               }
             </div>
           }
@@ -208,7 +216,7 @@
                 <div class="critic-card security-review-card"><div class="section-title"><div><span>{{ review.mode }}</span><h3>{{ review.decision }}</h3></div></div><p>{{ review.summary }}</p><div class="analysis-grid">@for (scan of (review.externalScans | keyvalue); track scan.key) { <div><strong>{{ scan.key }}</strong><span>{{ scan.value }}</span></div> }</div></div>
               } @else { <p class="blueprint-edit-hint">No security review result is available. Run the Security Reviewer from the Prove stage.</p> }
               <div class="target-card"><span>DEPLOYMENT TARGET</span><strong>Not connected</strong><p>Azure image build, vulnerability scanning, and deployment integrations must provide real evidence before this gate can open.</p></div>
-              @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" (click)="approve('release')">Approve &amp; Deploy →</button></div> }
+              @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('release')">{{ approvingGate === 'release' ? 'Approving…' : 'Approve and Deploy →' }}</button></div> }
             </div>
           }
 

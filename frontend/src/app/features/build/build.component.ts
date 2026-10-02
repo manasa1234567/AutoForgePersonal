@@ -55,6 +55,7 @@ export class BuildComponent implements OnInit {
   blueprintSecurityDraft = '';
 
   isSavingBlueprint = false;
+  approvingGate: Exclude<ApprovalGate, null> | null = null;
   isRunningSecurityReview = false;
   isPreparingDeployment = false;
   isRefiningRequirements = false;
@@ -316,42 +317,32 @@ get codeFiles(): string[] {
 
 
   approve(gate: Exclude<ApprovalGate, null>): void {
+    if (!this.build || this.approvingGate || this.build.approvalGate !== gate) return;
 
-  if (!this.build) return;
+    this.approvingGate = gate;
+    this.loadError = null;
+    this.cdr.markForCheck();
 
-
-
-  this.api.approve(this.build.id, gate).subscribe({
-
-    next: (build) => {
-      this.build = build;
-      this.selectFirstArtifact(build);
-      if (build.blueprint && !this.blueprintDraft) {
-        this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
-        this.blueprintSecurityDraft = build.blueprint.security.join('\n');
-      }
-      this.cdr.markForCheck();
-    },
-
-    error: (error: unknown) => {
-
-      console.error('Approval failed', error);
-
-      this.loadError = this.describeError(
-
-        error,
-
-        'Approval failed.',
-
-      );
-
-      this.cdr.markForCheck();
-
-    },
-
-  });
-
-}
+    this.api.approve(this.build.id, gate).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.loadError = null;
+        this.approvingGate = null;
+        this.selectFirstArtifact(build);
+        if (build.blueprint && !this.blueprintDraft) {
+          this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
+          this.blueprintSecurityDraft = build.blueprint.security.join('\n');
+        }
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        console.error('Approval failed', error);
+        this.approvingGate = null;
+        this.loadError = this.describeError(error, 'Approval failed.');
+        this.cdr.markForCheck();
+      },
+    });
+  }
 
 
 
@@ -446,7 +437,7 @@ get codeFiles(): string[] {
 
   saveBlueprint(approveAfterSave = false): void {
 
-    if (!this.build || !this.blueprintDraft || this.isSavingBlueprint) return;
+    if (!this.build || !this.blueprintDraft || this.isSavingBlueprint || this.approvingGate) return;
 
     const request: BlueprintUpdate = {
 

@@ -125,3 +125,6 @@
 .critic-findings-list .requirement-row { grid-template-columns: auto 1fr; }
  .skill-usage { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; padding:9px 10px; border:1px solid #c9e2ee; border-radius:8px; background:#f2f8fb; }
 .skill-usage > strong { width:100%; color:#365467; font-size:8px; }.skill-usage > span { padding:4px 6px; border-radius:5px; background:#fff; color:#426473; font-size:7px; }.skill-usage a { margin-left:auto; color:#007698; font-size:7px; font-weight:800; text-decoration:none; }
+.analysis-loading { min-height:390px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; text-align:center; }
+.analysis-loading h3 { margin:14px 0 6px; color:#30384a; font-size:15px; }
+.analysis-loading p { max-width:380px; margin:0; color:#737a8b; font-size:11px; line-height:1.6; }
