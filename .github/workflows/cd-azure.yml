@@ -52,12 +52,15 @@ jobs:
 
       - name: Deploy backend
         run: |
-          az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-backend --target-port 8000
+          az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-backend \
+            --target-port 8000 --transport http
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --image $REGISTRY/aegis-backend:$IMAGE_TAG
 
       - name: Deploy frontend
         run: |
+          az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-frontend \
+            --target-port 80 --transport http
           BACKEND_FQDN=$(az containerapp show -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --query properties.configuration.ingress.fqdn -o tsv)
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-frontend \
@@ -70,8 +73,17 @@ jobs:
             --query properties.configuration.ingress.fqdn -o tsv)
           echo "App URL: https://$URL"
           for i in 1 2 3 4 5 6; do
-            curl -sS -o /dev/null -w "frontend: %{http_code}\n" https://$URL/
-            curl -fsS https://$URL/api/requirements && exit 0
+            FRONTEND_STATUS=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "https://$URL/")
+            API_STATUS=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "https://$URL/api/health")
+            echo "Attempt $i: frontend=$FRONTEND_STATUS api-health=$API_STATUS"
+            if [ "$FRONTEND_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
+              echo "Frontend and API health checks passed"
+              exit 0
+            fi
+            if [ "$i" = "6" ]; then
+              echo "Final API response headers:"
+              curl -sS --max-time 15 -D - -o /dev/null "https://$URL/api/health" || true
+            fi
             sleep 10
           done
           exit 1
