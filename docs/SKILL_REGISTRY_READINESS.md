@@ -15,7 +15,7 @@
 - There is no authenticated reviewer identity in the current API. Audit events explicitly identify local review as unauthenticated.
 - The lexical retriever is a development adapter, not Azure AI Search. Recipe bodies are loaded from the checked-in Markdown seed, not Blob Storage; metadata is not stored in Cosmos DB.
 - Offline deterministic agent paths do not consume recipe guidance. Only model-backed Spec, Architecture, Coder, and Critic calls receive retrieved recipes. Coder reports application only when its configured model returns an allowed recipe ID.
-- Skill evolution from successful repairs is not enabled: the current Critic does not yet emit reusable before/after diffs with the evidence required by `SKL-EVOL-001`. The Security Reviewer and Deployer are not real execution agents, so their recipes remain reference material and are not represented as completed checks.
+- Skill evolution from successful repairs is not enabled: the current Critic does not yet emit reusable before/after diffs with the evidence required by `SKL-EVOL-001`. Security Reviewer recipes are contextual guidance for local static review; Deployer recipes are guidance for local deployment preflight. Neither recipe pack substitutes for Azure vulnerability scanning, image build/deploy, or other cloud execution evidence.
 
 ## Azure integration required
 
@@ -23,6 +23,6 @@
 2. Create/update Azure AI Search documents for approved versions; filter by agent and status, rank by query, and hydrate recipe bodies from Blob Storage.
 3. Add Entra-authenticated reviewer identity and durable audit events. Require a distinct authorized reviewer for promotion where policy requires separation of duties.
 4. Add the recipe evaluation set from the seed pack suggestions; measure relevance, unsafe/conflicting retrieval, and task quality before enabling automatic retrieval in production.
-5. Implement the Evolver, Security Reviewer, and Deployer behaviors before treating their recipes as executed controls.
+5. Implement the Evolver, and integrate the Azure-dependent Security Reviewer and Deployer controls before treating their recipes as executed cloud controls.
 
 The submitted recipes are guidance data, not executable tools or policy overrides. Prompt Shields, static checks, sandbox validation, approval gates, and the approved requirements remain independent controls.
