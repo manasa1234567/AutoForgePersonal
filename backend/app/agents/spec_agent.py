@@ -574,6 +574,31 @@ Requirement:
             for index, statement in enumerate(statements[:30], start=1)
         ]
 
+        if len(requirements) < 4:
+            derived = [
+                (
+                    "The system must support the requested workflow and satisfy the primary user objective described in the requirement."
+                    if not clean_text else
+                    f"The system must support the requested workflow described by: {clean_text[:180]}"
+                ),
+                "The system must validate all required inputs before continuing the workflow.",
+                "The system must protect sensitive data and enforce secure access controls for the requested capability.",
+                "The system must provide clear feedback and safe handling when validation or processing fails.",
+            ]
+            for index, text in enumerate(derived, start=len(requirements) + 1):
+                requirements.append(
+                    {
+                        "id": f"REQ-{index:03d}",
+                        "text": text,
+                        "type": "functional",
+                        "priority": "High" if index == 1 else "Medium",
+                        "confidence": 0.72,
+                        "source": "inferred",
+                    }
+                )
+                if len(requirements) >= 4:
+                    break
+
         security_considerations = [
             "Authentication and authorization should be defined before implementation.",
             "Sensitive application data should be protected in transit and at rest.",
