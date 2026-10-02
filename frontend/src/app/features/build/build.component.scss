@@ -123,3 +123,5 @@
 .critic-card > p { color: #62697a; font-size: 12px; line-height: 1.55; }
 .runtime-status { display: grid; gap: 4px; margin-top: 12px; padding: 10px 12px; border: 1px solid #f0d8a9; border-radius: 8px; background: #fff9ec; color: #795b24; font-size: 11px; }
 .critic-findings-list .requirement-row { grid-template-columns: auto 1fr; }
+ .skill-usage { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; padding:9px 10px; border:1px solid #c9e2ee; border-radius:8px; background:#f2f8fb; }
+.skill-usage > strong { width:100%; color:#365467; font-size:8px; }.skill-usage > span { padding:4px 6px; border-radius:5px; background:#fff; color:#426473; font-size:7px; }.skill-usage a { margin-left:auto; color:#007698; font-size:7px; font-weight:800; text-decoration:none; }

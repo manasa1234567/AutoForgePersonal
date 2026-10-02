@@ -153,7 +153,7 @@ The current version does **not** claim to deploy code to Azure. The following ar
 - Critic failure
 - Self-healing iteration
 - Skill promotion
-- Security gate
+- Dependency/image security scans and Azure release gate (local source review is implemented; see `docs/AGENT5_READINESS.md`)
 - Container deployment
 - Smoke-test verification
 - AgentOps metrics
@@ -255,6 +255,6 @@ The Angular proxy sends `/api` calls to `http://127.0.0.1:8000`.
 ## Workspace navigation
 
 - `Home` shows recent builds from the API; `New Build` opens the intake form; `Builds` lists and reopens builds.
-- `Agents` shows workflow roles and their latest recorded build state; `Skills` lists skill proposals attached to builds; `Knowledge` indexes source documents and text submitted with current-session builds; `Run History` shows their audit events.
+- `Agents` shows workflow roles and their latest recorded build state; `Skills` imports the 16 seed recipes and supports submission, approval, rejection, deprecation, and approved-only retrieval; `Knowledge` indexes source documents and text submitted with current-session builds; `Run History` shows their audit events.
 - `Settings` saves a workspace label in the current browser and documents server-side integration configuration. It does not store credentials or report connection health.
-- These views read from `/api/builds`. Local development uses the in-memory `BuildRepository` and `InProcessBuildJobDispatcher`; build data clears when the backend restarts. Durable Azure persistence, Service Bus, AI Search, and live integration status still require their Azure adapters and APIs.
+- The recipe catalog is served from `/api/skills`, with state held by a local in-memory repository. Approved recipes are supplied as advisory context to model-backed Spec, Architecture, Coder, and Critic agents; Coder skill application is included in build records and audit events. Recipe decisions and builds clear when the backend restarts. Durable Azure persistence, Service Bus, Cosmos DB, Blob Storage, AI Search, Entra reviewer identity, and live integration status still require their Azure adapters and APIs.

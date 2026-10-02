@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, OnInit, inject } from '@angular/core';
+﻿import { ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, OnInit, inject } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
 
@@ -55,6 +55,8 @@ export class BuildComponent implements OnInit {
   blueprintSecurityDraft = '';
 
   isSavingBlueprint = false;
+  isRunningSecurityReview = false;
+  isPreparingDeployment = false;
 
   readonly stages = ['Understand', 'Design', 'Forge', 'Prove', 'Release'] as const;
 
@@ -76,23 +78,7 @@ export class BuildComponent implements OnInit {
 
   ];
 
-  readonly releaseChecks = [
-    'Specification fidelity — 98%',
-
-    'Unit tests — 42/42',
-
-    'Contract tests — Passed',
-
-    'Security scan — Passed',
-
-    'Dependency scan — Passed',
-
-    'Container image scan — Passed',
-
-    'Self-healing iterations — 2',
-  ];
-
-  get codeFiles(): string[] {
+get codeFiles(): string[] {
     return this.build?.proof?.files ?? [];
   }
 
@@ -381,6 +367,40 @@ export class BuildComponent implements OnInit {
 
   }
 
+  runSecurityReview(): void {
+    if (!this.build || this.isRunningSecurityReview) return;
+    this.isRunningSecurityReview = true;
+    this.api.runSecurityReview(this.build.id).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.isRunningSecurityReview = false;
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        this.loadError = this.describeError(error, 'Security review could not be completed.');
+        this.isRunningSecurityReview = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  prepareDeployment(): void {
+    if (!this.build || this.isPreparingDeployment) return;
+    this.isPreparingDeployment = true;
+    this.api.prepareDeployment(this.build.id).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.isPreparingDeployment = false;
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        this.loadError = this.describeError(error, 'Deployment preflight could not be completed.');
+        this.isPreparingDeployment = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   selectArtifact(path: string): void {
     this.selectedArtifactPath = path;
   }
@@ -510,4 +530,3 @@ export class BuildComponent implements OnInit {
   }
 
 }
-

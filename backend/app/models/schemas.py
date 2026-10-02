@@ -43,6 +43,7 @@ class SourceFileContent(ApiModel):
 SourceType = Literal["jira", "openapi", "architecture", "upload", "usecase", "requirement"]
 ApprovalGate = Literal["requirements", "blueprint", "skill", "release"]
 SpecReadiness = Literal["READY", "NEEDS_CLARIFICATION"]
+SkillStatus = Literal["draft", "pending_approval", "approved", "deprecated", "rejected"]
 
 
 class BuildCreate(ApiModel):
@@ -182,6 +183,34 @@ class SkillProposal(ApiModel):
     status: Literal["Pending Approval", "Approved"] = "Pending Approval"
 
 
+class SkillRecipe(ApiModel):
+    id: str
+    agent: str
+    title: str
+    tags: list[str] = Field(default_factory=list)
+    use_when: str = ""
+    inputs: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    done_when: str = ""
+    pitfalls: list[str] = Field(default_factory=list)
+    output: str = ""
+    version: str = "0.1"
+    status: SkillStatus = "draft"
+    audit: list[AuditEvent] = Field(default_factory=list)
+
+
+class SkillApprovalRequest(ApiModel):
+    decision: Literal["submit", "approve", "reject", "deprecate"]
+    reason: str = Field(default="", max_length=1000)
+
+
+class SkillUsage(ApiModel):
+    id: str
+    version: str
+    usage: Literal["retrieved", "applied", "skipped"] = "retrieved"
+    reason: str = ""
+
+
 class ReleaseResult(ApiModel):
     spec_fidelity: int
     unit_tests: str
@@ -194,6 +223,28 @@ class ReleaseResult(ApiModel):
     private_network: bool
     public_ingress: bool
     deployment_url: str | None = None
+
+
+class SecurityReview(ApiModel):
+    mode: str = "local-static"
+    decision: Literal["No high or critical findings", "Block release"]
+    summary: str
+    checks: dict[str, str] = Field(default_factory=dict)
+    findings: list[CriticFinding] = Field(default_factory=list)
+    scanned_files: int = 0
+    skills_used: list[SkillUsage] = Field(default_factory=list)
+    external_scans: dict[str, str] = Field(default_factory=dict)
+
+
+class DeploymentPlan(ApiModel):
+    status: Literal["ready", "blocked"]
+    summary: str
+    target: str
+    image_tag: str
+    human_approval_required: bool = True
+    checks: dict[str, str] = Field(default_factory=dict)
+    blockers: list[str] = Field(default_factory=list)
+    artifact_manifest: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class BuildMetrics(ApiModel):
@@ -233,7 +284,10 @@ class BuildState(ApiModel):
     blueprint: Blueprint | None = None
     proof: ProofResult | None = None
     release: ReleaseResult | None = None
+    security_review: SecurityReview | None = None
+    deployment_plan: DeploymentPlan | None = None
     skill_proposal: SkillProposal | None = None
+    skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)
     audit: list[AuditEvent] = Field(default_factory=list)
     metrics: BuildMetrics = Field(default_factory=BuildMetrics)

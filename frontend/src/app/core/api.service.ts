@@ -6,6 +6,7 @@ import {
   BlueprintUpdate,
   BuildCreateRequest,
   BuildState,
+  SkillRecipe,
 } from '../shared/models/build.models';
 
 @Injectable({ providedIn: 'root' })
@@ -19,6 +20,14 @@ export class ApiService {
 
   getBuilds(): Observable<BuildState[]> {
     return this.http.get<BuildState[]>(`${this.baseUrl}/builds`);
+  }
+
+  getSkills(): Observable<SkillRecipe[]> {
+    return this.http.get<SkillRecipe[]>(`${this.baseUrl}/skills`);
+  }
+
+  decideSkill(recipeId: string, decision: 'submit' | 'approve' | 'reject' | 'deprecate', reason = ''): Observable<SkillRecipe> {
+    return this.http.post<SkillRecipe>(`${this.baseUrl}/skills/${encodeURIComponent(recipeId)}/decision`, { decision, reason });
   }
 
   startBuild(buildId: string): Observable<BuildState> {
@@ -39,5 +48,13 @@ export class ApiService {
 
   refine(buildId: string, text: string): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/refine`, { text });
+  }
+
+  runSecurityReview(buildId: string): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/security-review`, {});
+  }
+
+  prepareDeployment(buildId: string): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/deployment-preflight`, {});
   }
 }

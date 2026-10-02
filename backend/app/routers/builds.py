@@ -70,3 +70,23 @@ async def refine_build(build_id: str, payload: RefineRequest):
         return await store.refine(build_id, payload.text)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{build_id}/security-review")
+async def review_build_security(build_id: str):
+    try:
+        await store.run_security_review(build_id)
+        return store.get(build_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{build_id}/deployment-preflight")
+async def prepare_build_deployment(build_id: str):
+    try:
+        await store.prepare_deployment(build_id)
+        return store.get(build_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

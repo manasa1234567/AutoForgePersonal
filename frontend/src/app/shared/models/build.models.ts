@@ -102,6 +102,31 @@ export interface SkillProposal {
   status: 'Pending Approval' | 'Approved';
 }
 
+export type SkillRecipeStatus = 'draft' | 'pending_approval' | 'approved' | 'deprecated' | 'rejected';
+
+export interface SkillRecipe {
+  id: string;
+  agent: string;
+  title: string;
+  tags: string[];
+  useWhen: string;
+  inputs: string[];
+  steps: string[];
+  doneWhen: string;
+  pitfalls: string[];
+  output: string;
+  version: string;
+  status: SkillRecipeStatus;
+  audit: AuditEvent[];
+}
+
+export interface SkillUsage {
+  id: string;
+  version: string;
+  usage: 'retrieved' | 'applied' | 'skipped';
+  reason: string;
+}
+
 export interface ReleaseResult {
   specFidelity: number;
   unitTests: string;
@@ -114,6 +139,28 @@ export interface ReleaseResult {
   privateNetwork: boolean;
   publicIngress: boolean;
   deploymentUrl?: string;
+}
+
+export interface SecurityReview {
+  mode: string;
+  decision: 'No high or critical findings' | 'Block release';
+  summary: string;
+  checks: Record<string, string>;
+  findings: CriticFinding[];
+  scannedFiles: number;
+  skillsUsed: SkillUsage[];
+  externalScans: Record<string, string>;
+}
+
+export interface DeploymentPlan {
+  status: 'ready' | 'blocked';
+  summary: string;
+  target: string;
+  imageTag: string;
+  humanApprovalRequired: boolean;
+  checks: Record<string, string>;
+  blockers: string[];
+  artifactManifest: { path: string; sizeBytes: number; sha256: string }[];
 }
 
 export interface BuildMetrics {
@@ -143,7 +190,10 @@ export interface BuildState {
   blueprint: Blueprint | null;
   proof: ProofResult | null;
   release: ReleaseResult | null;
+  securityReview: SecurityReview | null;
+  deploymentPlan: DeploymentPlan | null;
   skillProposal: SkillProposal | null;
+  skillsUsed: SkillUsage[];
   agents: AgentState[];
   audit: AuditEvent[];
   metrics: BuildMetrics;
