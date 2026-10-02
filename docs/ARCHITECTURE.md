@@ -36,6 +36,8 @@ The Spec Agent runs without Azure credentials using a clearly labelled determini
 
 The remaining agents and Azure resources are still demo adapters in this repository. The worker queue, Entra/VPN boundary, persistent stores, dynamic sandbox, image pipeline, private deployment, monitoring, and rollback require the Day-0 environment and D1-D7 identity/network approvals before cloud execution can be completed.
 
+The seed recipe pack is imported into a local `SkillRepository` from `backend/app/skills/seed_recipes.md`. Recipe lifecycle decisions are audited in process memory; lexical retrieval returns only approved recipes, and the model-backed Spec, Architecture, Coder, and Critic agents receive relevant recipes as untrusted advisory context. The Coder Agent can report which retrieved recipe IDs it applied, and build audit state records retrieval/application. The local store is not Cosmos DB, recipe bodies are not in Blob Storage, and retrieval is not Azure AI Search. The evolver, security-review, and deployer recipes remain catalogued guidance until those workflow components have real implementations.
+
 ## Governance checkpoints
 
 1. Content safety before requirement processing.

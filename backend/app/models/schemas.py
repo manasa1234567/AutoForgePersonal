@@ -43,6 +43,7 @@ class SourceFileContent(ApiModel):
 SourceType = Literal["jira", "openapi", "architecture", "upload", "usecase", "requirement"]
 ApprovalGate = Literal["requirements", "blueprint", "skill", "release"]
 SpecReadiness = Literal["READY", "NEEDS_CLARIFICATION"]
+SkillStatus = Literal["draft", "pending_approval", "approved", "deprecated", "rejected"]
 
 
 class BuildCreate(ApiModel):
@@ -182,6 +183,34 @@ class SkillProposal(ApiModel):
     status: Literal["Pending Approval", "Approved"] = "Pending Approval"
 
 
+class SkillRecipe(ApiModel):
+    id: str
+    agent: str
+    title: str
+    tags: list[str] = Field(default_factory=list)
+    use_when: str = ""
+    inputs: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    done_when: str = ""
+    pitfalls: list[str] = Field(default_factory=list)
+    output: str = ""
+    version: str = "0.1"
+    status: SkillStatus = "draft"
+    audit: list[AuditEvent] = Field(default_factory=list)
+
+
+class SkillApprovalRequest(ApiModel):
+    decision: Literal["submit", "approve", "reject", "deprecate"]
+    reason: str = Field(default="", max_length=1000)
+
+
+class SkillUsage(ApiModel):
+    id: str
+    version: str
+    usage: Literal["retrieved", "applied", "skipped"] = "retrieved"
+    reason: str = ""
+
+
 class ReleaseResult(ApiModel):
     spec_fidelity: int
     unit_tests: str
@@ -234,6 +263,7 @@ class BuildState(ApiModel):
     proof: ProofResult | None = None
     release: ReleaseResult | None = None
     skill_proposal: SkillProposal | None = None
+    skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)
     audit: list[AuditEvent] = Field(default_factory=list)
     metrics: BuildMetrics = Field(default_factory=BuildMetrics)

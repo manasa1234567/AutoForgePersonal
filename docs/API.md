@@ -63,3 +63,17 @@ Allowed gates: `requirements`, `blueprint`, `skill`, `release`.
 `GET /api/builds/{buildId}/events`
 
 Returns the audit trail for the build.
+
+## Skill Registry
+
+`GET /api/skills` returns the imported recipe catalog. Optional query parameters are `status`, `agent`, and `q`. Supported lifecycle statuses are `draft`, `pending_approval`, `approved`, `rejected`, and `deprecated`.
+
+`GET /api/skills/{recipeId}` returns a recipe and its governance audit.
+
+`POST /api/skills/{recipeId}/decision` advances one lifecycle decision:
+
+```json
+{ "decision": "submit", "reason": "Ready for engineering review" }
+```
+
+Allowed decisions are `submit` (draft to pending approval), `approve` (pending approval to approved), `reject` (pending approval to rejected), and `deprecate` (approved to deprecated). Only approved recipes are eligible for agent retrieval. These local decisions are process-memory only and the API has no Entra reviewer identity yet; production must persist decisions and derive the reviewer from authenticated identity.

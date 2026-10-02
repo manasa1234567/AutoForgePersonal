@@ -124,7 +124,8 @@
                 <div class="code-editor"><div class="editor-tab">{{ selectedArtifactPath || 'Generated files' }}</div><pre><code>{{ generatedCode }}</code></pre></div>
               </div>
               <div class="coder-activity"><span>Approved requirements received</span><span>Approved architecture received</span><span>{{ currentBuild.proof?.files?.length ?? 0 }} file(s) generated</span></div>
-              @if (currentBuild.skillProposal; as skill) { <div class="skill-banner"><div><span>NEW SKILL PROPOSED</span><strong>{{ skill.name }} {{ skill.version }}</strong><small>{{ skill.reason }}</small></div><button class="secondary-button" type="button">Review Skill &rarr;</button></div> }
+              @if (currentBuild.skillsUsed.length) { <div class="skill-usage"><strong>Skill recipes</strong>@for (skill of currentBuild.skillsUsed; track $index) { <span>{{ skill.id }} v{{ skill.version }} · {{ skill.usage }}{{ skill.reason ? ': ' + skill.reason : '' }}</span> }<a routerLink="/skills">Open Skill Registry →</a></div> }
+              @if (currentBuild.skillProposal; as skill) { <div class="skill-banner"><div><span>NEW SKILL PROPOSED</span><strong>{{ skill.name }} {{ skill.version }}</strong><small>{{ skill.reason }}</small></div><a class="secondary-button" routerLink="/skills">Review Skill Registry &rarr;</a></div> }
             </div>
           }
 

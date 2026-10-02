@@ -24,9 +24,9 @@ Show the generated project structure and reusable skill proposal. Explain that t
 
 Show the synthetic contract failure. The Critic Agent identifies the root cause, applies a fix and reruns tests. This is the strongest autonomous behavior in the demo.
 
-## 4:30 — Skill evolution
+## 4:30 — Skill Registry
 
-Show `Document_Validator v1.0` waiting for approval. Explain that a proven fix is not silently promoted; a human approves the new reusable skill.
+Open **Skills** and show the imported seed recipes. Submit one draft for review, approve it, and explain that only approved recipes can be retrieved for matching model-backed agents. In local mode the registry is in memory; Cosmos DB, Blob Storage, and Azure AI Search are pending cloud integration.
 
 ## 5:00 — Release
 

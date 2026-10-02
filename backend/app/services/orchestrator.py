@@ -13,10 +13,13 @@ from ..models.schemas import (
     BlueprintUpdate,
     ProofResult,
     ReleaseResult,
+    SkillRecipe,
+    SkillUsage,
 )
 from .agent_service import AgentService
 from .azure_adapters import AzureAdapters
 from ..repositories.build_repository import BuildRepository, InMemoryBuildRepository
+from .skill_registry import skill_registry
 from .jira_client import JiraClient
 from .job_dispatcher import BuildJobDispatcher, InProcessBuildJobDispatcher
 from .source_documents import extract_source_documents
@@ -39,6 +42,34 @@ class Orchestrator:
     @staticmethod
     def _time() -> str:
         return datetime.now(timezone.utc).strftime("%H:%M:%S")
+
+    @staticmethod
+    def _skill_query(build: BuildState) -> str:
+        parts = [build.title, build.source_type, build.source_text]
+        parts.extend(str(item.get("text", "")) for item in build.requirements)
+        parts.extend(build.acceptance_criteria)
+        if build.blueprint:
+            parts.extend([
+                build.blueprint.frontend,
+                build.blueprint.backend,
+                build.blueprint.data,
+                *build.blueprint.security,
+            ])
+        return " ".join(part for part in parts if part)
+
+    def _record_skill_retrieval(self, build: BuildState, recipes: list[SkillRecipe], agent: str) -> None:
+        if not recipes:
+            return
+        build.skills_used.extend(
+            SkillUsage(id=recipe.id, version=recipe.version, usage="retrieved") for recipe in recipes
+        )
+        self._add_event(
+            build,
+            "Skills",
+            f"Retrieved {len(recipes)} approved recipe(s) for {agent}",
+            "Skill Registry",
+            metadata={"agent": agent, "skills": [recipe.id for recipe in recipes]},
+        )
 
     @staticmethod
     def _agents() -> list[AgentState]:
@@ -139,11 +170,15 @@ class Orchestrator:
         if bool(safety_result["blocked"]):
             raise RuntimeError(f"Input blocked by AI safety policy: {safety_result['reason']}")
 
+        recipes = skill_registry.retrieve(agent="Spec Agent", query=self._skill_query(build), limit=5)
         result = await self._agent_service.run_spec_agent(
             title=build.title,
             source_type=build.source_type,
             source_text=build.source_text,
+            skills=recipes,
         )
+        if result.mode in {"foundry-agent", "azure-openai"}:
+            self._record_skill_retrieval(build, recipes, "Spec Agent")
         build.requirements = result.requirements
         build.requirement_summary = result.summary
         build.acceptance_criteria = result.acceptance_criteria
@@ -171,6 +206,7 @@ class Orchestrator:
     async def _design(self, build: BuildState) -> None:
         self._set_agent(build, "Architecture Agent", "Running", "Creating solution blueprint")
         self._build_repository.save(build)
+        recipes = skill_registry.retrieve(agent="Architecture Agent", query=self._skill_query(build), limit=5)
         result = await self._agent_service.run_architecture_agent(
             title=build.title,
             requirements=build.requirements,
@@ -178,7 +214,10 @@ class Orchestrator:
             dependencies=build.dependencies,
             constraints=build.constraints,
             security_considerations=build.security_considerations,
+            skills=recipes,
         )
+        if result.mode == "foundry-agent":
+            self._record_skill_retrieval(build, recipes, "Architecture Agent")
         build.blueprint = result.blueprint
         build.metrics.tokens += result.tokens
         if result.mode == "foundry-agent":
@@ -200,18 +239,41 @@ class Orchestrator:
         self._build_repository.save(build)
         if build.blueprint is None:
             raise RuntimeError("An approved architecture blueprint is required before code generation")
+        coder_recipes = skill_registry.retrieve(agent="Coder Agent", query=self._skill_query(build), limit=5)
         result = await self._agent_service.run_coder_agent(
             title=build.title,
             blueprint=build.blueprint,
             requirements=build.requirements,
             acceptance_criteria=build.acceptance_criteria,
+            skills=coder_recipes,
         )
+        if result.mode == "foundry-agent":
+            self._record_skill_retrieval(build, coder_recipes, "Coder Agent")
         build.proof = ProofResult(
             files=list(result.files),
             artifacts=result.files,
             generator_mode=result.mode,
             integration="Not run",
         )
+        build.skills_used.extend(result.skills_used)
+        applied_skills = [skill for skill in result.skills_used if skill.usage == "applied"]
+        skipped_skills = [skill for skill in result.skills_used if skill.usage == "skipped"]
+        if applied_skills:
+            self._add_event(
+                build,
+                "Skills",
+                f"Coder Agent applied {len(applied_skills)} approved skill recipe(s)",
+                "Skill Agent",
+                metadata={"skills": [skill.model_dump(by_alias=True) for skill in applied_skills]},
+            )
+        if skipped_skills:
+            self._add_event(
+                build,
+                "Skills",
+                f"Coder Agent skipped {len(skipped_skills)} retrieved recipe(s)",
+                "Skill Agent",
+                metadata={"skills": [skill.model_dump(by_alias=True) for skill in skipped_skills]},
+            )
         build.metrics.tokens += result.tokens
         if result.mode == "foundry-agent":
             build.metrics.tool_calls += 1
@@ -235,13 +297,17 @@ class Orchestrator:
             raise RuntimeError("Proof result is missing before critic execution")
         if build.blueprint is None:
             raise RuntimeError("The approved blueprint is missing before Critic review")
+        critic_recipes = skill_registry.retrieve(agent="Critic Agent", query=self._skill_query(build), limit=5)
         result = await self._agent_service.run_critic_agent(
             title=build.title,
             blueprint=build.blueprint,
             requirements=build.requirements,
             acceptance_criteria=build.acceptance_criteria,
             artifacts=build.proof.artifacts,
+            skills=critic_recipes,
         )
+        if result.mode == "foundry-static-review":
+            self._record_skill_retrieval(build, critic_recipes, "Critic Agent")
         repair_limit = 2
         for attempt in range(1, repair_limit + 1):
             if (
@@ -252,17 +318,32 @@ class Orchestrator:
             ):
                 break
             self._set_agent(build, "Coder Agent", "Running", f"Repair attempt {attempt} of {repair_limit} from Critic findings")
+            repair_recipes = skill_registry.retrieve(agent="Coder Agent", query=self._skill_query(build), limit=5)
             repaired = await self._agent_service.run_coder_agent(
                 title=build.title,
                 blueprint=build.blueprint,
                 requirements=build.requirements,
                 acceptance_criteria=build.acceptance_criteria,
+                skills=repair_recipes,
                 previous_artifacts=build.proof.artifacts,
                 repair_findings=[finding.model_dump(by_alias=True) for finding in result.findings],
             )
+            if repaired.mode == "foundry-agent":
+                self._record_skill_retrieval(build, repair_recipes, "Coder Agent")
             build.proof.files = list(repaired.files)
             build.proof.artifacts = repaired.files
             build.proof.code = repaired.files
+            build.skills_used.extend(repaired.skills_used)
+            applied_repair_skills = [skill for skill in repaired.skills_used if skill.usage == "applied"]
+            skipped_repair_skills = [skill for skill in repaired.skills_used if skill.usage == "skipped"]
+            if applied_repair_skills or skipped_repair_skills:
+                self._add_event(
+                    build,
+                    "Skills",
+                    f"Repair pass applied {len(applied_repair_skills)} recipe(s) and skipped {len(skipped_repair_skills)}",
+                    "Skill Agent",
+                    metadata={"skills": [skill.model_dump(by_alias=True) for skill in repaired.skills_used]},
+                )
             build.metrics.tokens += repaired.tokens
             if repaired.mode == "foundry-agent":
                 build.metrics.tool_calls += 1
@@ -277,13 +358,17 @@ class Orchestrator:
                 metadata={"attempt": attempt, "prior_findings": len(result.findings)},
             )
             self._build_repository.save(build)
+            critic_recipes = skill_registry.retrieve(agent="Critic Agent", query=self._skill_query(build), limit=5)
             result = await self._agent_service.run_critic_agent(
                 title=build.title,
                 blueprint=build.blueprint,
                 requirements=build.requirements,
                 acceptance_criteria=build.acceptance_criteria,
                 artifacts=build.proof.artifacts,
+                skills=critic_recipes,
             )
+            if result.mode == "foundry-static-review":
+                self._record_skill_retrieval(build, critic_recipes, "Critic Agent")
         build.proof.critic_mode = result.mode
         build.proof.critic_summary = result.summary
         build.proof.critic_findings = result.findings
@@ -328,10 +413,16 @@ class Orchestrator:
             self._build_repository.save(build)
             return
 
-        build.approval_gate = "skill"
-        build.status = "Awaiting Approval"
-        build.progress = 78
-        self._build_repository.save(build)
+        if build.skill_proposal:
+            build.approval_gate = "skill"
+            build.status = "Awaiting Approval"
+            build.progress = 78
+            self._build_repository.save(build)
+            return
+
+        self._set_agent(build, "Skill Agent", "Ready", "No eligible reusable skill candidate was produced in this build")
+        self._add_event(build, "Skills", "No new reusable skill candidate was promoted by this build", "Skill Agent")
+        await self._security(build)
 
     async def _security(self, build: BuildState) -> None:
         self._set_agent(build, "Security Reviewer", "Running", "Running security and policy checks")
@@ -406,10 +497,11 @@ class Orchestrator:
                 self._build_repository.save(build)
                 return build
         elif gate == "skill":
-            if build.skill_proposal:
-                build.skill_proposal.status = "Approved"
+            if not build.skill_proposal:
+                raise ValueError("There is no generated skill proposal pending approval for this build")
+            build.skill_proposal.status = "Approved"
             self._set_agent(build, "Skill Agent", "Ready", "Skill version approved and promoted")
-            self._add_event(build, "Skills", "Document_Validator v1.0 promoted after human approval", "Skill Agent")
+            self._add_event(build, "Skills", f"{build.skill_proposal.name} {build.skill_proposal.version} promoted after human approval", "Skill Agent")
             build.status = "Running"
             await self._security(build)
         elif gate == "release":

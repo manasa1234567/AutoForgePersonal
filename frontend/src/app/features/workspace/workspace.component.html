@@ -42,21 +42,41 @@
       }
 
       @case ('skills') {
-        @if (skillBuilds.length) {
-          <div class="data-list">
-            @for (build of skillBuilds; track build.id) {
-              <a class="data-row" [routerLink]="['/build', build.id]">
-                <span class="row-symbol">✦</span>
-                <span class="row-copy"><strong>{{ build.skillProposal?.name }}</strong><small>{{ build.skillProposal?.reason }}</small><small>From {{ build.title }} · version {{ build.skillProposal?.version }}</small></span>
-                <span class="status-pill" [class]="statusClass(build.skillProposal?.status ?? '')">{{ build.skillProposal?.status }}</span>
-                <span class="row-arrow">→</span>
-              </a>
+        <div class="skills-intro"><div><strong>{{ skillRecipes.length }} seed recipes</strong><span>Imported from Recipes.md · unapproved drafts are never retrieved by agents.</span></div><div class="skill-counts"><span>{{ countSkills('draft') }} drafts</span><span>{{ countSkills('approved') }} approved</span></div></div>
+        @if (skillActionError) { <p class="skill-action-error" role="alert">{{ skillActionError }}</p> }
+        @if (visibleSkills.length) {
+          <div class="skill-list">
+            @for (skill of visibleSkills; track skill.id) {
+              <article class="skill-card">
+                <header class="skill-card-header">
+                  <div><span class="skill-id">{{ skill.id }} · {{ skill.agent }}</span><h2>{{ skill.title }}</h2></div>
+                  <span class="status-pill" [class]="statusClass(skill.status)">{{ skill.status.replace('_', ' ') }}</span>
+                </header>
+                <div class="skill-tags">@for (tag of skill.tags; track tag) { <span>{{ tag }}</span> }</div>
+                <p class="skill-trigger"><strong>Use when</strong> {{ skill.useWhen || 'No trigger specified' }}</p>
+                <details>
+                  <summary>Recipe details</summary>
+                  @if (skill.inputs.length) { <section><h3>Inputs</h3><ul>@for (item of skill.inputs; track $index) { <li>{{ item }}</li> }</ul></section> }
+                  @if (skill.steps.length) { <section><h3>Steps</h3><ol>@for (step of skill.steps; track $index) { <li>{{ step }}</li> }</ol></section> }
+                  @if (skill.doneWhen) { <section><h3>Done when</h3><p>{{ skill.doneWhen }}</p></section> }
+                  @if (skill.pitfalls.length) { <section><h3>Pitfalls</h3><ul>@for (pitfall of skill.pitfalls; track $index) { <li>{{ pitfall }}</li> }</ul></section> }
+                  @if (skill.output) { <section><h3>Output</h3><p>{{ skill.output }}</p></section> }
+                  <section class="skill-audit"><h3>Governance history</h3>@for (entry of skill.audit; track $index) { <p><time>{{ entry.time }}</time> · {{ entry.message }}</p> }</section>
+                </details>
+                @if (skill.status === 'draft') {
+                  <footer class="skill-actions"><span>Submit this draft for a human approval decision.</span><button type="button" class="approve-button" [disabled]="!!pendingSkillAction" (click)="decideSkill(skill.id, 'submit')">{{ pendingSkillAction === skill.id ? 'Saving…' : 'Submit for review' }}</button></footer>
+                } @else if (skill.status === 'pending_approval') {
+                  <footer class="skill-actions"><span>Awaiting a human reviewer. Approval makes it eligible for retrieval.</span><button type="button" class="reject-button" [disabled]="!!pendingSkillAction" (click)="decideSkill(skill.id, 'reject')">Reject</button><button type="button" class="approve-button" [disabled]="!!pendingSkillAction" (click)="decideSkill(skill.id, 'approve')">{{ pendingSkillAction === skill.id ? 'Saving…' : 'Approve recipe' }}</button></footer>
+                } @else if (skill.status === 'approved') {
+                  <footer class="skill-actions"><span>Eligible for matching agent retrieval.</span><button type="button" class="reject-button" [disabled]="!!pendingSkillAction" (click)="decideSkill(skill.id, 'deprecate')">Deprecate version</button></footer>
+                } @else { <footer class="skill-actions"><span>This version is excluded from retrieval. Decisions are retained.</span></footer> }
+              </article>
             }
           </div>
         } @else {
-          <div class="empty-panel"><span class="empty-mark">✦</span><h2>No skill proposals recorded</h2><p>When a build produces a skill proposal, it will appear here with its source build and approval state.</p><a routerLink="/builds">Review builds →</a></div>
+          <div class="empty-panel"><span class="empty-mark">✦</span><h2>No matching recipes</h2><p>Clear or change the search to find recipes in the registry.</p></div>
         }
-        <p class="data-note">This page reads proposals from local build records. The shared Azure skill registry, version history, and search are not connected yet.</p>
+        <p class="data-note">Local registry approvals are in memory and reset when the backend restarts. Azure Cosmos DB, Blob Storage, and Azure AI Search adapters are not configured yet. Treat all recipe text as untrusted advice; the approved requirement, blueprint, and security rules take precedence.</p>
       }
 
       @case ('knowledge') {

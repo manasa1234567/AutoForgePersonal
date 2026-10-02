@@ -6,7 +6,7 @@ from ..agents.architecture_agent import ArchitectureAgent, ArchitectureResult
 from ..agents.coder_agent import CoderAgent, CoderResult
 from ..agents.critic_agent import CriticAgent, CriticResult
 from ..agents.spec_agent import SpecAgent, SpecAgentResult
-from ..models.schemas import Blueprint
+from ..models.schemas import Blueprint, SkillRecipe
 
 
 class AgentService:
@@ -18,11 +18,19 @@ class AgentService:
         self.coder_agent = CoderAgent()
         self.critic_agent = CriticAgent()
 
-    async def run_spec_agent(self, *, title: str, source_type: str, source_text: str) -> SpecAgentResult:
+    async def run_spec_agent(
+        self,
+        *,
+        title: str,
+        source_type: str,
+        source_text: str,
+        skills: list[SkillRecipe] | None = None,
+    ) -> SpecAgentResult:
         return await self.spec_agent.analyze(
             title=title,
             source_type=source_type,
             source_text=source_text,
+            skills=skills,
         )
 
     async def run_architecture_agent(
@@ -34,6 +42,7 @@ class AgentService:
         dependencies: list[str],
         constraints: list[str],
         security_considerations: list[str],
+        skills: list[SkillRecipe] | None = None,
     ) -> ArchitectureResult:
         return await self.architecture_agent.design(
             title=title,
@@ -42,6 +51,7 @@ class AgentService:
             dependencies=dependencies,
             constraints=constraints,
             security_considerations=security_considerations,
+            skills=skills,
         )
 
     async def run_coder_agent(
@@ -51,6 +61,7 @@ class AgentService:
         blueprint: Blueprint,
         requirements: list[dict[str, Any]],
         acceptance_criteria: list[str],
+        skills: list[SkillRecipe] | None = None,
         previous_artifacts: dict[str, str] | None = None,
         repair_findings: list[dict[str, Any]] | None = None,
     ) -> CoderResult:
@@ -59,6 +70,7 @@ class AgentService:
             blueprint=blueprint,
             requirements=requirements,
             acceptance_criteria=acceptance_criteria,
+            skills=skills,
             previous_artifacts=previous_artifacts,
             repair_findings=repair_findings,
         )
@@ -71,6 +83,7 @@ class AgentService:
         requirements: list[dict[str, Any]],
         acceptance_criteria: list[str],
         artifacts: dict[str, str],
+        skills: list[SkillRecipe] | None = None,
     ) -> CriticResult:
         return await self.critic_agent.review(
             title=title,
@@ -78,4 +91,5 @@ class AgentService:
             requirements=requirements,
             acceptance_criteria=acceptance_criteria,
             artifacts=artifacts,
+            skills=skills,
         )
