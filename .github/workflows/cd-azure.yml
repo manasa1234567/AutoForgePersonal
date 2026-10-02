@@ -1,34 +1,30 @@
 name: CD - Azure
 
 on:
-  workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/cd-azure.yml'           # Phase 1: manual
-  # Phase 2: delete the line above and uncomment this block
-  # workflow_run:
-  #   workflows: ["CI"]
-  #   types: [completed]
-  #   branches: [main]
+  workflow_run:
+    workflows: ["CI"]          # must match `name: CI` in ci.yml exactly
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:           # keep for manual runs
 
 permissions:
-  id-token: write               # required for OIDC login
+  id-token: write              # required for OIDC login
   contents: read
 
 env:
   REGISTRY: ${{ vars.ACR_NAME }}.azurecr.io
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy:
-    # Phase 2: uncomment this line
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Deploy only if CI succeeded (manual runs always allowed)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: production     # must match the federated credential subject
+    environment: production    # must match the federated credential subject
     steps:
       - uses: actions/checkout@v4
-        # Phase 2: uncomment so the exact CI-tested commit is deployed
-        # with:
-        #   ref: ${{ github.event.workflow_run.head_sha }}
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -42,21 +38,24 @@ jobs:
 
       - name: Build and push images
         run: |
-          docker build -t $REGISTRY/aegis-backend:${{ github.sha }} ./backend
-          docker build -f frontend/Dockerfile -t $REGISTRY/aegis-frontend:${{ github.sha }} .
-          docker push $REGISTRY/aegis-backend:${{ github.sha }}
-          docker push $REGISTRY/aegis-frontend:${{ github.sha }}
+          docker build -t $REGISTRY/aegis-backend:$IMAGE_TAG ./backend
+          docker build -f frontend/Dockerfile -t $REGISTRY/aegis-frontend:$IMAGE_TAG .
+          docker push $REGISTRY/aegis-backend:$IMAGE_TAG
+          docker push $REGISTRY/aegis-frontend:$IMAGE_TAG
 
       - name: Deploy backend
         run: |
           az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-backend --target-port 8000
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
-            --image $REGISTRY/aegis-backend:${{ github.sha }}
+            --image $REGISTRY/aegis-backend:$IMAGE_TAG
 
       - name: Deploy frontend
         run: |
+          BACKEND_FQDN=$(az containerapp show -g ${{ vars.AZURE_RG }} -n aegis-backend \
+            --query properties.configuration.ingress.fqdn -o tsv)
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-frontend \
-            --image $REGISTRY/aegis-frontend:${{ github.sha }}
+            --image $REGISTRY/aegis-frontend:$IMAGE_TAG \
+            --set-env-vars BACKEND_URL=https://$BACKEND_FQDN
 
       - name: Smoke test
         run: |
@@ -64,7 +63,8 @@ jobs:
             --query properties.configuration.ingress.fqdn -o tsv)
           echo "App URL: https://$URL"
           for i in 1 2 3 4 5 6; do
-            curl -fsS https://$URL/api/health && exit 0
+            curl -sS -o /dev/null -w "frontend: %{http_code}\n" https://$URL/
+            curl -fsS https://$URL/api/requirements && exit 0
             sleep 10
           done
           exit 1
