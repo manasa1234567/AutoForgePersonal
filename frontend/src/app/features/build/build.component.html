@@ -76,7 +76,8 @@
                 <div><strong>Acceptance criteria</strong>@for (criterion of currentBuild.acceptanceCriteria; track criterion) { <span>✓ {{ criterion }}</span> }</div>
                 <div><strong>Dependencies</strong>@for (dependency of currentBuild.dependencies; track dependency) { <span>• {{ dependency }}</span> }</div>
               </div>
-              <div class="stage-footer"><button class="secondary-button" type="button" (click)="refine()">Refine with AI</button>@if (currentBuild.approvalGate === 'requirements') { <button class="primary-button" type="button" (click)="approve('requirements')">Approve &amp; Continue →</button> }</div>
+              <div class="stage-footer"><button class="secondary-button" type="button" [disabled]="isRefiningRequirements" (click)="refine()">{{ isRefiningRequirements ? 'Refining requirements…' : 'Refine with AI' }}</button>@if (currentBuild.approvalGate === 'requirements') { <button class="primary-button" type="button" [disabled]="isRefiningRequirements" (click)="approve('requirements')">Approve &amp; Continue →</button> }</div>
+              @if (refineMessage) { <p class="inline-success" role="status">{{ refineMessage }}</p> }
             </div>
           }
 

@@ -31,6 +31,7 @@ jobs:
     env:
       FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
       FOUNDRY_SPEC_MODEL: ${{ vars.FOUNDRY_SPEC_MODEL }}
+      FOUNDRY_ARCHITECTURE_MODEL: ${{ vars.FOUNDRY_ARCHITECTURE_MODEL }}
       FOUNDRY_MODEL: ${{ vars.FOUNDRY_MODEL }}
       AZURE_CONTENT_SAFETY_ENDPOINT: ${{ vars.AZURE_CONTENT_SAFETY_ENDPOINT }}
       AZURE_PROMPT_SHIELDS_API_VERSION: ${{ vars.AZURE_PROMPT_SHIELDS_API_VERSION || '2024-09-01' }}
@@ -43,7 +44,7 @@ jobs:
 
       - name: Validate Agent 1 cloud configuration
         run: |
-          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" && -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_MODEL" && -z "$AZURE_CONTENT_SAFETY_ENDPOINT" && -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" && -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" && -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_ARCHITECTURE_MODEL" && -z "$FOUNDRY_MODEL" && -z "$AZURE_CONTENT_SAFETY_ENDPOINT" && -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" && -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
             echo "Agent 1 Foundry settings are not configured; this deployment will use demo mode."
             exit 0
           fi
@@ -92,6 +93,7 @@ jobs:
               --set-env-vars \
                 "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_PROJECT_ENDPOINT" \
                 "FOUNDRY_SPEC_MODEL=$FOUNDRY_SPEC_MODEL" \
+                "FOUNDRY_ARCHITECTURE_MODEL=$FOUNDRY_ARCHITECTURE_MODEL" \
                 "FOUNDRY_MODEL=$FOUNDRY_MODEL" \
                 "AZURE_CONTENT_SAFETY_ENDPOINT=$AZURE_CONTENT_SAFETY_ENDPOINT" \
                 "AZURE_PROMPT_SHIELDS_API_VERSION=$AZURE_PROMPT_SHIELDS_API_VERSION" \

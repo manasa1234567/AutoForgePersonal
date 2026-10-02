@@ -57,6 +57,8 @@ export class BuildComponent implements OnInit {
   isSavingBlueprint = false;
   isRunningSecurityReview = false;
   isPreparingDeployment = false;
+  isRefiningRequirements = false;
+  refineMessage: string | null = null;
 
   readonly stages = ['Understand', 'Design', 'Forge', 'Prove', 'Release'] as const;
 
@@ -355,7 +357,12 @@ get codeFiles(): string[] {
 
   refine(): void {
 
-    if (!this.build) return;
+    if (!this.build || this.isRefiningRequirements) return;
+
+    this.isRefiningRequirements = true;
+    this.refineMessage = null;
+    this.loadError = null;
+    this.cdr.markForCheck();
 
     this.api.refine(
 
@@ -363,7 +370,19 @@ get codeFiles(): string[] {
 
       'Please add explicit input validation, authentication and retry/error-handling requirements.',
 
-    ).subscribe();
+    ).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.isRefiningRequirements = false;
+        this.refineMessage = 'Requirements refined. Review the updated specification before approving.';
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        this.isRefiningRequirements = false;
+        this.loadError = this.describeError(error, 'Requirements could not be refined.');
+        this.cdr.markForCheck();
+      },
+    });
 
   }
 
