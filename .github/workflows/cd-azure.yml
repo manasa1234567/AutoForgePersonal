@@ -28,10 +28,41 @@ jobs:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: production       # must match the federated credential subject
+    env:
+      FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+      FOUNDRY_SPEC_MODEL: ${{ vars.FOUNDRY_SPEC_MODEL }}
+      FOUNDRY_MODEL: ${{ vars.FOUNDRY_MODEL }}
+      AZURE_CONTENT_SAFETY_ENDPOINT: ${{ vars.AZURE_CONTENT_SAFETY_ENDPOINT }}
+      AZURE_PROMPT_SHIELDS_API_VERSION: ${{ vars.AZURE_PROMPT_SHIELDS_API_VERSION || '2024-09-01' }}
+      FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID: ${{ vars.FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID }}
+      FOUNDRY_RUNTIME_CLIENT_ID: ${{ vars.FOUNDRY_RUNTIME_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate Agent 1 cloud configuration
+        run: |
+          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" && -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_MODEL" && -z "$AZURE_CONTENT_SAFETY_ENDPOINT" && -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" && -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+            echo "Agent 1 Foundry settings are not configured; this deployment will use demo mode."
+            exit 0
+          fi
+          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" ]]; then
+            echo "Set FOUNDRY_PROJECT_ENDPOINT to enable the Foundry Spec Agent."
+            exit 1
+          fi
+          if [[ -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_MODEL" ]]; then
+            echo "Set FOUNDRY_SPEC_MODEL or FOUNDRY_MODEL in GitHub Actions variables."
+            exit 1
+          fi
+          if [[ -z "$AZURE_CONTENT_SAFETY_ENDPOINT" ]]; then
+            echo "Set AZURE_CONTENT_SAFETY_ENDPOINT before enabling the Foundry Spec Agent."
+            exit 1
+          fi
+          if [[ -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" || -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+            echo "Set FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID and FOUNDRY_RUNTIME_CLIENT_ID for the ACA workload identity."
+            exit 1
+          fi
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -54,6 +85,21 @@ jobs:
         run: |
           az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --target-port 8000 --transport http
+          if [[ -n "$FOUNDRY_PROJECT_ENDPOINT" ]]; then
+            az containerapp identity assign -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --user-assigned "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID"
+            az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --set-env-vars \
+                "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_PROJECT_ENDPOINT" \
+                "FOUNDRY_SPEC_MODEL=$FOUNDRY_SPEC_MODEL" \
+                "FOUNDRY_MODEL=$FOUNDRY_MODEL" \
+                "AZURE_CONTENT_SAFETY_ENDPOINT=$AZURE_CONTENT_SAFETY_ENDPOINT" \
+                "AZURE_PROMPT_SHIELDS_API_VERSION=$AZURE_PROMPT_SHIELDS_API_VERSION" \
+                AUTOFORGE_IDENTITY_MODE=managed_identity \
+                "AZURE_CLIENT_ID=$FOUNDRY_RUNTIME_CLIENT_ID"
+          else
+            echo "Foundry not configured; backend will retain its current settings (new installs use demo mode)."
+          fi
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --image $REGISTRY/aegis-backend:$IMAGE_TAG
 

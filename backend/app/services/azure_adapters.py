@@ -18,8 +18,20 @@ class AzureAdapters:
         if endpoint:
             return await self._prompt_shields_check(endpoint, text)
 
-        if os.getenv("FOUNDRY_PROJECT_ENDPOINT"):
-            raise RuntimeError("Foundry analysis is configured but AZURE_CONTENT_SAFETY_ENDPOINT is missing")
+        cloud_model_configured = any(
+            os.getenv(name)
+            for name in (
+                "FOUNDRY_PROJECT_ENDPOINT",
+                "AZURE_OPENAI_ENDPOINT",
+                "AZURE_OPENAI_API_KEY",
+                "AZURE_OPENAI_DEPLOYMENT",
+            )
+        )
+        if cloud_model_configured:
+            raise RuntimeError(
+                "Cloud model analysis is configured but AZURE_CONTENT_SAFETY_ENDPOINT is missing; "
+                "configure Azure Prompt Shields before enabling model-backed analysis"
+            )
 
         # Local-only fallback. Configure AZURE_CONTENT_SAFETY_ENDPOINT to use the
         # Azure Prompt Shields service before enabling cloud model analysis.
@@ -52,7 +64,7 @@ class AzureAdapters:
                 for chunk in chunks:
                     response = await client.post(
                         f"{endpoint}/contentsafety/text:shieldPrompt",
-                        params={"api-version": os.getenv("AZURE_PROMPT_SHIELDS_API_VERSION", "2024-02-15-preview")},
+                        params={"api-version": os.getenv("AZURE_PROMPT_SHIELDS_API_VERSION", "2024-09-01")},
                         headers=headers,
                         json={
                             "userPrompt": "Extract requirements from the supplied engineering input.",
