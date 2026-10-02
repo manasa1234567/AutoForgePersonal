@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+
+  frontend:
+    build:
+      context: .                      # repo root
+      dockerfile: frontend/Dockerfile
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports: ["8080:80"]
+    depends_on: [backend]
