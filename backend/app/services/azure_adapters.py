@@ -83,6 +83,18 @@ class AzureAdapters:
                         return {"blocked": True, "reason": "Azure Prompt Shields detected a prompt injection attempt"}
             return {"blocked": False, "reason": "Azure Prompt Shields accepted the input"}
         except Exception as exc:
+            # Preserve safe provider diagnostics so a cloud failure can be
+            # distinguished from an auth, endpoint, or API-version problem.
+            # Never include request headers, tokens, or the configured endpoint.
+            if isinstance(exc, httpx.HTTPStatusError):
+                status = exc.response.status_code
+                error_code = exc.response.headers.get("x-ms-error-code")
+                diagnostic = f"HTTP {status}"
+                if error_code:
+                    diagnostic += f", Azure error code {error_code}"
+                raise RuntimeError(
+                    f"Azure Prompt Shields check failed ({diagnostic}); analysis stopped"
+                ) from exc
             raise RuntimeError(f"Azure Prompt Shields check failed ({type(exc).__name__}); analysis stopped") from exc
         finally:
             await credential.close()
