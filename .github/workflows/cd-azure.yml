@@ -71,7 +71,7 @@ jobs:
           echo "App URL: https://$URL"
           for i in 1 2 3 4 5 6; do
             curl -sS -o /dev/null -w "frontend: %{http_code}\n" https://$URL/
-            curl -fsS https://$URL/api/requirements && exit 0
+            curl -fsS https://$URL/api/builds && exit 0
             sleep 10
           done
           exit 1
