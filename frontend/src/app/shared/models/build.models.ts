@@ -141,6 +141,17 @@ export interface ReleaseResult {
   deploymentUrl?: string;
 }
 
+export interface SecurityReview {
+  mode: string;
+  decision: 'No high or critical findings' | 'Block release';
+  summary: string;
+  checks: Record<string, string>;
+  findings: CriticFinding[];
+  scannedFiles: number;
+  skillsUsed: SkillUsage[];
+  externalScans: Record<string, string>;
+}
+
 export interface BuildMetrics {
   tokens: number;
   toolCalls: number;
@@ -168,6 +179,7 @@ export interface BuildState {
   blueprint: Blueprint | null;
   proof: ProofResult | null;
   release: ReleaseResult | null;
+  securityReview: SecurityReview | null;
   skillProposal: SkillProposal | null;
   skillsUsed: SkillUsage[];
   agents: AgentState[];

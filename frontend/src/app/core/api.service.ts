@@ -49,4 +49,8 @@ export class ApiService {
   refine(buildId: string, text: string): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/refine`, { text });
   }
+
+  runSecurityReview(buildId: string): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/security-review`, {});
+  }
 }

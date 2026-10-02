@@ -12,7 +12,7 @@ from ..models.schemas import (
     BuildState,
     BlueprintUpdate,
     ProofResult,
-    ReleaseResult,
+    SecurityReview,
     SkillRecipe,
     SkillUsage,
 )
@@ -429,25 +429,73 @@ class Orchestrator:
         build.stage = "Release"
         build.progress = 88
         self._build_repository.save(build)
-        await asyncio.sleep(0.7)
-        build.release = ReleaseResult(
-            spec_fidelity=98,
-            unit_tests="42/42",
-            contract_tests="Passed",
-            security_scan="Passed",
-            dependency_scan="Passed",
-            container_image_scan="Passed",
-            self_healing_iterations=build.metrics.self_heal_iterations,
-            target="Azure Container Apps (Internal Environment)",
-            private_network=True,
-            public_ingress=False,
-        )
-        self._set_agent(build, "Security Reviewer", "Ready", "Security gates passed")
-        self._add_event(build, "Security", "Security and dependency gates passed", "Security Reviewer")
-        build.approval_gate = "release"
-        build.status = "Awaiting Approval"
-        build.progress = 93
+        review = await self.run_security_review(build.id)
+        blocking = review.decision == "Block release"
+        pending = [name for name, state in review.external_scans.items() if state.startswith("Not run")]
+        detail = "High or critical source findings require remediation" if blocking else "Local source review complete"
+        if pending:
+            detail += "; cloud release checks remain unavailable"
+        self._set_agent(build, "Security Reviewer", "Blocked" if blocking or pending else "Ready", detail)
+        if blocking or pending:
+            build.approval_gate = None
+            build.status = "Blocked"
+            build.error = (
+                "Release is blocked until high or critical source findings are resolved."
+                if blocking else
+                "Local source review is complete, but dependency CVE, image, Azure policy, and deployment checks "
+                "are not configured. Release approval and deployment remain blocked until those integrations are ready."
+            )
+            build.progress = 88
+        else:
+            # This branch is reserved for when all release integrations report evidence.
+            build.approval_gate = "release"
+            build.status = "Awaiting Approval"
+            build.progress = 93
         self._build_repository.save(build)
+
+    async def run_security_review(self, build_id: str) -> SecurityReview:
+        """Run the local Security Reviewer over generated source without executing it."""
+        build = self.get(build_id)
+        if build.proof is None or not build.proof.artifacts:
+            raise ValueError("Generate code artifacts before running the Security Reviewer")
+        self._set_agent(build, "Security Reviewer", "Running", "Inspecting generated artifacts without executing them")
+        self._build_repository.save(build)
+        recipes = skill_registry.retrieve(agent="Security Reviewer", query=self._skill_query(build), limit=5)
+        review = await self._agent_service.run_security_reviewer(
+            artifacts=build.proof.artifacts,
+            skills=recipes,
+            requirements=build.requirements,
+            security_controls=build.blueprint.security if build.blueprint else build.security_considerations,
+            blueprint_choices={
+                "deployment": build.blueprint.deployment,
+                "identity": build.blueprint.identity,
+            } if build.blueprint else {},
+        )
+        build.security_review = review
+        self._record_skill_retrieval(build, recipes, "Security Reviewer")
+        blockers = review.decision == "Block release"
+        self._set_agent(
+            build,
+            "Security Reviewer",
+            "Blocked" if blockers else "Ready",
+            f"{review.mode}: {len(review.findings)} finding(s); external scans not run locally",
+        )
+        self._add_event(
+            build,
+            "Security",
+            review.summary,
+            "Security Reviewer",
+            severity="error" if blockers else "warning",
+            metadata={
+                "decision": review.decision,
+                "mode": review.mode,
+                "findings": len(review.findings),
+                "external_scans": review.external_scans,
+                "skills": [item.id for item in recipes],
+            },
+        )
+        self._build_repository.save(build)
+        return review
 
     async def _deploy(self, build: BuildState) -> None:
         build.approval_gate = None

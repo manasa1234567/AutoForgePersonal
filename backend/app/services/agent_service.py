@@ -6,7 +6,8 @@ from ..agents.architecture_agent import ArchitectureAgent, ArchitectureResult
 from ..agents.coder_agent import CoderAgent, CoderResult
 from ..agents.critic_agent import CriticAgent, CriticResult
 from ..agents.spec_agent import SpecAgent, SpecAgentResult
-from ..models.schemas import Blueprint, SkillRecipe
+from ..agents.security_reviewer import SecurityReviewer
+from ..models.schemas import Blueprint, SecurityReview, SkillRecipe
 
 
 class AgentService:
@@ -17,6 +18,7 @@ class AgentService:
         self.architecture_agent = ArchitectureAgent()
         self.coder_agent = CoderAgent()
         self.critic_agent = CriticAgent()
+        self.security_reviewer = SecurityReviewer()
 
     async def run_spec_agent(
         self,
@@ -92,4 +94,21 @@ class AgentService:
             acceptance_criteria=acceptance_criteria,
             artifacts=artifacts,
             skills=skills,
+        )
+
+    async def run_security_reviewer(
+        self,
+        *,
+        artifacts: dict[str, str],
+        skills: list[SkillRecipe] | None = None,
+        requirements: list[dict[str, Any]] | None = None,
+        security_controls: list[str] | None = None,
+        blueprint_choices: dict[str, str] | None = None,
+    ) -> SecurityReview:
+        return await self.security_reviewer.review(
+            artifacts=artifacts,
+            skills=skills,
+            requirements=requirements,
+            security_controls=security_controls,
+            blueprint_choices=blueprint_choices,
         )

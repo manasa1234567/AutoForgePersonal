@@ -225,6 +225,17 @@ class ReleaseResult(ApiModel):
     deployment_url: str | None = None
 
 
+class SecurityReview(ApiModel):
+    mode: str = "local-static"
+    decision: Literal["No high or critical findings", "Block release"]
+    summary: str
+    checks: dict[str, str] = Field(default_factory=dict)
+    findings: list[CriticFinding] = Field(default_factory=list)
+    scanned_files: int = 0
+    skills_used: list[SkillUsage] = Field(default_factory=list)
+    external_scans: dict[str, str] = Field(default_factory=dict)
+
+
 class BuildMetrics(ApiModel):
     tokens: int = 0
     tool_calls: int = 0
@@ -262,6 +273,7 @@ class BuildState(ApiModel):
     blueprint: Blueprint | None = None
     proof: ProofResult | None = None
     release: ReleaseResult | None = None
+    security_review: SecurityReview | None = None
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)

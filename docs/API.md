@@ -50,6 +50,8 @@ Allowed gates: `requirements`, `blueprint`, `skill`, `release`.
 
 `PUT /api/builds/{buildId}/blueprint` is available while the blueprint approval gate is pending. It accepts the editable application, frontend, backend, data, storage, messaging, identity, deployment, and security choices. The update is saved to the build and recorded in the audit trail. Blueprint approval then passes the saved choices to the Coder Agent.
 
+`POST /api/builds/{buildId}/security-review` runs the local Security Reviewer over generated artifacts without executing them and returns the updated build, including findings, check statuses, and scans that were not run. It requires generated artifacts (otherwise HTTP 409). This static review does not replace dependency CVE, image, Azure policy, runtime, or deployment validation; the release gate stays closed while those integrations are unavailable. See `AGENT5_READINESS.md`.
+
 ## Refine
 
 `POST /api/builds/{buildId}/refine`

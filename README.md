@@ -153,7 +153,7 @@ The current version does **not** claim to deploy code to Azure. The following ar
 - Critic failure
 - Self-healing iteration
 - Skill promotion
-- Security gate
+- Dependency/image security scans and Azure release gate (local source review is implemented; see `docs/AGENT5_READINESS.md`)
 - Container deployment
 - Smoke-test verification
 - AgentOps metrics

@@ -146,6 +146,28 @@
                 @if (proof.requirementCoverage.length > 0) { <div class="analysis-grid"><div><strong>Requirement coverage review</strong>@for (item of proof.requirementCoverage; track $index) { <span>{{ item }}</span> }</div></div> }
                 @if (proof.testPlan.length > 0) { <div class="analysis-grid"><div><strong>Sandbox test plan</strong>@for (item of proof.testPlan; track $index) { <span>{{ item }}</span> }</div></div> }
                 <p class="blueprint-edit-hint">This run's generated files were not executed. Skill promotion stays blocked until isolated runtime checks pass.</p>
+                <div class="stage-footer">
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    [disabled]="isRunningSecurityReview"
+                    (click)="runSecurityReview()"
+                  >
+                    {{ isRunningSecurityReview ? 'Reviewing artifacts...' : 'Run Local Security Review' }}
+                  </button>
+                </div>
+                @if (currentBuild.securityReview; as review) {
+                  <div class="critic-card security-review-card">
+                    <div class="section-title"><div><span>SECURITY REVIEWER · {{ review.mode }}</span><h3>{{ review.decision }}</h3></div><b>{{ review.scannedFiles }} files reviewed</b></div>
+                    <p>{{ review.summary }}</p>
+                    <div class="analysis-grid">@for (check of (review.checks | keyvalue); track check.key) { <div><strong>{{ check.key }}</strong><span>{{ check.value }}</span></div> }</div>
+                    @if (review.findings.length) {
+                      <div class="section-title"><div><span>SECURITY FINDINGS</span><h3>Review and remediate</h3></div><b>{{ review.findings.length }} found</b></div>
+                      <div class="requirements-list critic-findings-list">@for (finding of review.findings; track $index) { <article class="requirement-row"><em>{{ finding.severity }}</em><div><strong>{{ finding.issue }}</strong><small>{{ finding.file ?? 'Project-wide' }} &middot; {{ finding.recommendation }}</small></div></article> }</div>
+                    } @else { <p class="blueprint-edit-hint">No high or critical source patterns were detected by these local checks.</p> }
+                    <div class="analysis-grid"><div><strong>Not performed locally</strong>@for (scan of (review.externalScans | keyvalue); track scan.key) { <span>{{ scan.key }}: {{ scan.value }}</span> }</div></div>
+                  </div>
+                }
                 @if (currentBuild.approvalGate === 'skill') { <div class="approval-banner"><div><strong>Human approval required</strong><span>Review the validation result before promoting the reusable skill.</span></div><button class="primary-button" type="button" (click)="approve('skill')">Approve Skill Promotion &rarr;</button></div> }
               }
             </div>
@@ -153,9 +175,12 @@
 
           @case ('Release') {
             <div class="stage-body">
-              <div class="section-title"><div><span>SECURITY + DEPLOYER</span><h3>Release Gate</h3></div><b>Human approval required</b></div>
-              <div class="release-layout"><div class="gate-list">@for (check of releaseChecks; track check) { <div><span>✓</span>{{ check }}</div> }</div><div class="target-card"><span>DEPLOYMENT TARGET</span><strong>Azure Container Apps</strong><p>Internal environment · private network · no public ingress</p><div><b>Entra ID</b><b>Managed Identity</b><b>Defender</b></div></div></div>
-              <div class="stage-footer"><button class="secondary-button" type="button">Request Changes</button><button class="primary-button" type="button" (click)="approve('release')">Approve &amp; Deploy →</button></div>
+              <div class="section-title"><div><span>SECURITY + DEPLOYER</span><h3>Release Gate</h3></div><b>{{ currentBuild.approvalGate === 'release' ? 'Human approval required' : 'Release blocked' }}</b></div>
+              @if (currentBuild.securityReview; as review) {
+                <div class="critic-card security-review-card"><div class="section-title"><div><span>{{ review.mode }}</span><h3>{{ review.decision }}</h3></div></div><p>{{ review.summary }}</p><div class="analysis-grid">@for (scan of (review.externalScans | keyvalue); track scan.key) { <div><strong>{{ scan.key }}</strong><span>{{ scan.value }}</span></div> }</div></div>
+              } @else { <p class="blueprint-edit-hint">No security review result is available. Run the Security Reviewer from the Prove stage.</p> }
+              <div class="target-card"><span>DEPLOYMENT TARGET</span><strong>Not connected</strong><p>Azure image build, vulnerability scanning, and deployment integrations must provide real evidence before this gate can open.</p></div>
+              @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" (click)="approve('release')">Approve &amp; Deploy →</button></div> }
             </div>
           }
 
