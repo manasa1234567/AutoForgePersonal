@@ -2,23 +2,32 @@ name: CD - Azure
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:           # keep for manual runs
+    branches: [main]              # force: deploy on every push to main
+  workflow_dispatch:              # manual button
+  # Safe mode (recommended later): delete the push block above and use this instead
+  # workflow_run:
+  #   workflows: ["CI"]
+  #   types: [completed]
+  #   branches: [main]
 
 permissions:
-  id-token: write              # required for OIDC login
+  id-token: write                 # required for OIDC login
   contents: read
 
 env:
   REGISTRY: ${{ vars.ACR_NAME }}.azurecr.io
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+concurrency:
+  group: cd-azure
+  cancel-in-progress: false       # queue deploys, never cut one off midway
+
 jobs:
   deploy:
-    # Deploy only if CI succeeded (manual runs always allowed)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Never skipped for push or manual runs; workflow_run needs a green CI
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: production    # must match the federated credential subject
+    environment: production       # must match the federated credential subject
     steps:
       - uses: actions/checkout@v4
         with:
