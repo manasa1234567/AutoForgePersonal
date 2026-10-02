@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -11,6 +10,7 @@ from ..models.schemas import (
     BuildCreate,
     BuildState,
     BlueprintUpdate,
+    DeploymentPlan,
     ProofResult,
     SecurityReview,
     SkillRecipe,
@@ -498,24 +498,54 @@ class Orchestrator:
         return review
 
     async def _deploy(self, build: BuildState) -> None:
+        plan = await self.prepare_deployment(build.id)
         build.approval_gate = None
-        self._set_agent(build, "Deployer Agent", "Running", "Preparing gated deployment")
+        if plan.status != "ready":
+            build.status = "Blocked"
+            build.stage = "Release"
+            build.error = "Deployment was blocked by the Deployer Agent preflight. Review the blockers before retrying."
+            self._set_agent(build, "Deployer Agent", "Blocked", plan.summary)
+            self._add_event(
+                build,
+                "Deploy",
+                "Deployment was not started because preflight checks are incomplete",
+                "Deployer Agent",
+                severity="warning",
+                metadata={"blockers": plan.blockers},
+            )
+            self._build_repository.save(build)
+            return
+        # This code path remains disabled until a reviewed Azure deployment adapter is installed.
+        build.status = "Blocked"
+        build.stage = "Release"
+        build.error = "The Azure deployment adapter is not implemented; no deployment was started."
+        self._set_agent(build, "Deployer Agent", "Blocked", build.error)
+        self._add_event(build, "Deploy", build.error, "Deployer Agent", severity="warning")
         self._build_repository.save(build)
-        await asyncio.sleep(0.8)
-        result = await self._azure.deploy(build.id)
-        if build.release is None:
-            raise RuntimeError("Release gate data is missing before deployment")
-        build.release.deployment_url = result["deployment_url"]
-        build.stage = "Replay"
-        build.status = "Deployed"
-        build.progress = 100
-        build.metrics.tokens += 720
-        build.metrics.tool_calls += 5
-        build.metrics.success_rate = 100
-        self._set_agent(build, "Deployer Agent", "Ready", "Deployment verified")
-        self._add_event(build, "Deploy", "Deployment started", "Deployer Agent")
-        self._add_event(build, "Verify", "Smoke test passed; deployment verified", "Deployer Agent")
+
+    async def prepare_deployment(self, build_id: str) -> DeploymentPlan:
+        """Run a local deployment preflight and save its artifact manifest; never deploy."""
+        build = self.get(build_id)
+        self._set_agent(build, "Deployer Agent", "Running", "Preparing deployment manifest and checking gates")
         self._build_repository.save(build)
+        plan = await self._agent_service.prepare_deployment(build)
+        build.deployment_plan = plan
+        self._set_agent(
+            build,
+            "Deployer Agent",
+            "Blocked" if plan.status == "blocked" else "Waiting",
+            plan.summary,
+        )
+        self._add_event(
+            build,
+            "Deploy Preflight",
+            plan.summary,
+            "Deployer Agent",
+            severity="warning" if plan.status == "blocked" else "info",
+            metadata={"target": plan.target, "blockers": plan.blockers, "files": len(plan.artifact_manifest)},
+        )
+        self._build_repository.save(build)
+        return plan
 
     async def approve(self, build_id: str, gate: str) -> BuildState:
         build = self.get(build_id)

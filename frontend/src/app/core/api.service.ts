@@ -53,4 +53,8 @@ export class ApiService {
   runSecurityReview(buildId: string): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/security-review`, {});
   }
+
+  prepareDeployment(buildId: string): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/deployment-preflight`, {});
+  }
 }

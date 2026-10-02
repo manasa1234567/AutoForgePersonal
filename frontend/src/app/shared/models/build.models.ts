@@ -152,6 +152,17 @@ export interface SecurityReview {
   externalScans: Record<string, string>;
 }
 
+export interface DeploymentPlan {
+  status: 'ready' | 'blocked';
+  summary: string;
+  target: string;
+  imageTag: string;
+  humanApprovalRequired: boolean;
+  checks: Record<string, string>;
+  blockers: string[];
+  artifactManifest: { path: string; sizeBytes: number; sha256: string }[];
+}
+
 export interface BuildMetrics {
   tokens: number;
   toolCalls: number;
@@ -180,6 +191,7 @@ export interface BuildState {
   proof: ProofResult | null;
   release: ReleaseResult | null;
   securityReview: SecurityReview | null;
+  deploymentPlan: DeploymentPlan | null;
   skillProposal: SkillProposal | null;
   skillsUsed: SkillUsage[];
   agents: AgentState[];

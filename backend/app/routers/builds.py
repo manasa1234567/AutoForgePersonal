@@ -81,3 +81,12 @@ async def review_build_security(build_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{build_id}/deployment-preflight")
+async def prepare_build_deployment(build_id: str):
+    try:
+        await store.prepare_deployment(build_id)
+        return store.get(build_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

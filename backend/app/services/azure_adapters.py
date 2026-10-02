@@ -76,6 +76,6 @@ class AzureAdapters:
             await credential.close()
 
     async def deploy(self, build_id: str) -> dict[str, str]:
-        return {
-            "deployment_url": f"https://internal-autoforge-{build_id}.azurecontainerapps.io",
-        }
+        raise RuntimeError(
+            "Azure deployment is not configured. The Deployer Agent will not fabricate a deployment URL or smoke-test result."
+        )

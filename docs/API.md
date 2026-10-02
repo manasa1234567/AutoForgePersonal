@@ -52,6 +52,8 @@ Allowed gates: `requirements`, `blueprint`, `skill`, `release`.
 
 `POST /api/builds/{buildId}/security-review` runs the local Security Reviewer over generated artifacts without executing them and returns the updated build, including findings, check statuses, and scans that were not run. It requires generated artifacts (otherwise HTTP 409). This static review does not replace dependency CVE, image, Azure policy, runtime, or deployment validation; the release gate stays closed while those integrations are unavailable. See `AGENT5_READINESS.md`.
 
+`POST /api/builds/{buildId}/deployment-preflight` asks the Deployer Agent to prepare a local-only deployment plan. The response includes configuration and gate checks, blockers, and a SHA-256 manifest of generated artifacts. It never builds or deploys an image. See `AGENT6_READINESS.md`.
+
 ## Refine
 
 `POST /api/builds/{buildId}/refine`

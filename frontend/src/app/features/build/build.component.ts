@@ -56,6 +56,7 @@ export class BuildComponent implements OnInit {
 
   isSavingBlueprint = false;
   isRunningSecurityReview = false;
+  isPreparingDeployment = false;
 
   readonly stages = ['Understand', 'Design', 'Forge', 'Prove', 'Release'] as const;
 
@@ -378,6 +379,23 @@ get codeFiles(): string[] {
       error: (error: unknown) => {
         this.loadError = this.describeError(error, 'Security review could not be completed.');
         this.isRunningSecurityReview = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  prepareDeployment(): void {
+    if (!this.build || this.isPreparingDeployment) return;
+    this.isPreparingDeployment = true;
+    this.api.prepareDeployment(this.build.id).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.isPreparingDeployment = false;
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        this.loadError = this.describeError(error, 'Deployment preflight could not be completed.');
+        this.isPreparingDeployment = false;
         this.cdr.markForCheck();
       },
     });

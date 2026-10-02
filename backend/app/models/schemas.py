@@ -236,6 +236,17 @@ class SecurityReview(ApiModel):
     external_scans: dict[str, str] = Field(default_factory=dict)
 
 
+class DeploymentPlan(ApiModel):
+    status: Literal["ready", "blocked"]
+    summary: str
+    target: str
+    image_tag: str
+    human_approval_required: bool = True
+    checks: dict[str, str] = Field(default_factory=dict)
+    blockers: list[str] = Field(default_factory=list)
+    artifact_manifest: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class BuildMetrics(ApiModel):
     tokens: int = 0
     tool_calls: int = 0
@@ -274,6 +285,7 @@ class BuildState(ApiModel):
     proof: ProofResult | None = None
     release: ReleaseResult | None = None
     security_review: SecurityReview | None = None
+    deployment_plan: DeploymentPlan | None = None
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)

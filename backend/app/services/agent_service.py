@@ -7,7 +7,8 @@ from ..agents.coder_agent import CoderAgent, CoderResult
 from ..agents.critic_agent import CriticAgent, CriticResult
 from ..agents.spec_agent import SpecAgent, SpecAgentResult
 from ..agents.security_reviewer import SecurityReviewer
-from ..models.schemas import Blueprint, SecurityReview, SkillRecipe
+from ..agents.deployer_agent import DeployerAgent
+from ..models.schemas import Blueprint, DeploymentPlan, SecurityReview, SkillRecipe, BuildState
 
 
 class AgentService:
@@ -19,6 +20,7 @@ class AgentService:
         self.coder_agent = CoderAgent()
         self.critic_agent = CriticAgent()
         self.security_reviewer = SecurityReviewer()
+        self.deployer_agent = DeployerAgent()
 
     async def run_spec_agent(
         self,
@@ -112,3 +114,6 @@ class AgentService:
             security_controls=security_controls,
             blueprint_choices=blueprint_choices,
         )
+
+    async def prepare_deployment(self, build: BuildState) -> DeploymentPlan:
+        return await self.deployer_agent.prepare(build)

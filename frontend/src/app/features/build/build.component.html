@@ -168,6 +168,33 @@
                     <div class="analysis-grid"><div><strong>Not performed locally</strong>@for (scan of (review.externalScans | keyvalue); track scan.key) { <span>{{ scan.key }}: {{ scan.value }}</span> }</div></div>
                   </div>
                 }
+                <div class="stage-footer">
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    [disabled]="isPreparingDeployment"
+                    (click)="prepareDeployment()"
+                  >
+                    {{ isPreparingDeployment ? 'Preparing plan...' : 'Prepare Deployment Plan' }}
+                  </button>
+                </div>
+                @if (currentBuild.deploymentPlan; as plan) {
+                  <div class="critic-card security-review-card">
+                    <div class="section-title"><div><span>DEPLOYER AGENT PREFLIGHT</span><h3>{{ plan.status === 'blocked' ? 'Deployment blocked' : 'Preflight ready' }}</h3></div><b>Approval required: {{ plan.humanApprovalRequired ? 'Yes' : 'No' }}</b></div>
+                    <p>{{ plan.summary }}</p>
+                    <div class="analysis-grid">
+                      <div><strong>Blueprint target</strong><span>{{ plan.target }}</span></div>
+                      <div><strong>Candidate image tag</strong><span>{{ plan.imageTag }}</span></div>
+                      @for (check of (plan.checks | keyvalue); track check.key) { <div><strong>{{ check.key }}</strong><span>{{ check.value }}</span></div> }
+                    </div>
+                    @if (plan.blockers.length) {
+                      <div class="requirements-list critic-findings-list">@for (blocker of plan.blockers; track $index) { <article class="requirement-row"><em>Blocked</em><div><strong>{{ blocker }}</strong></div></article> }</div>
+                    }
+                    @if (plan.artifactManifest.length) {
+                      <div class="analysis-grid"><div><strong>Manifest (SHA-256)</strong>@for (artifact of plan.artifactManifest; track artifact.path) { <span>{{ artifact.path }} · {{ artifact.sizeBytes }} bytes · {{ artifact.sha256 }}</span> }</div></div>
+                    }
+                  </div>
+                }
                 @if (currentBuild.approvalGate === 'skill') { <div class="approval-banner"><div><strong>Human approval required</strong><span>Review the validation result before promoting the reusable skill.</span></div><button class="primary-button" type="button" (click)="approve('skill')">Approve Skill Promotion &rarr;</button></div> }
               }
             </div>
