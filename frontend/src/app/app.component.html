@@ -1,0 +1,20 @@
+﻿<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" routerLink="/" aria-label="AegisAI home">
+      <span class="brand-mark">A</span>
+      <span class="brand-name">Aegis<span>AI</span></span>
+    </a>
+    <nav class="navigation" aria-label="Primary navigation">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><span class="nav-icon">H</span><span>Home</span></a>
+      <a routerLink="/new-build" routerLinkActive="active"><span class="nav-icon">+</span><span>New Build</span></a>
+      <a routerLink="/builds" routerLinkActive="active"><span class="nav-icon">B</span><span>Builds</span></a>
+      <a routerLink="/agents" routerLinkActive="active"><span class="nav-icon">A</span><span>Agents</span></a>
+      <a routerLink="/skills" routerLinkActive="active"><span class="nav-icon">S</span><span>Skills</span></a>
+      <a routerLink="/knowledge" routerLinkActive="active"><span class="nav-icon">K</span><span>Knowledge</span></a>
+      <a routerLink="/run-history" routerLinkActive="active"><span class="nav-icon">R</span><span>Run History</span></a>
+      <a routerLink="/settings" routerLinkActive="active"><span class="nav-icon">&#9881;</span><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer"><span>TEKsystems Global Services</span><strong>Master the momentum of technology.</strong></div>
+  </aside>
+  <main class="main-content"><router-outlet /></main>
+</div>

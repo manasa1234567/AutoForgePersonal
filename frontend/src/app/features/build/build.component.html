@@ -1,0 +1,184 @@
+@if (build; as currentBuild) {
+  <section class="build-page">
+    <header class="build-header">
+      <div class="build-heading">
+        <div class="breadcrumb"><a routerLink="/builds">Builds</a> <span>/</span> <strong>{{ currentBuild.title }}</strong></div>
+        <h1>{{ currentBuild.title }}</h1>
+        <p>{{ sourceLabel }} · Governed AutoForge workspace</p>
+      </div>
+      <div class="build-actions">
+        <span class="status-pill" [class.approval]="currentBuild.status === 'Awaiting Approval'">● {{ currentBuild.status }}</span>
+        <span class="progress-pill">{{ currentBuild.progress }}%</span>
+      </div>
+    </header>
+
+    <nav class="journey" aria-label="Forge journey">
+      @for (stage of stages; track stage; let index = $index) {
+        <div class="journey-step" [class.active]="stageIndex === index" [class.done]="stageIndex > index">
+          <span>{{ index + 1 }}</span><strong>{{ stage }}</strong>
+        </div>
+        @if (index < stages.length - 1) { <i [class.complete]="stageIndex > index"></i> }
+      }
+    </nav>
+
+    <div class="workspace-grid">
+      <section class="panel constellation-panel">
+        <div class="panel-heading"><div><span class="panel-kicker">AGENT SYSTEM</span><h2>Agent Constellation</h2><p>Specialized agents working together</p></div><span class="live-dot">● LIVE</span></div>
+        <div class="constellation">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="connector connector-a"></div><div class="connector connector-b"></div><div class="connector connector-c"></div>
+          <div class="orchestrator"><b>A</b><strong>Orchestrator</strong><small>Microsoft Foundry</small></div>
+          @for (node of agentNodes; track node.name) {
+            <div class="agent-node" [class]="node.position" [class.running]="agentStatus(node.name) === 'Running'">
+              <span>{{ node.icon }}</span>
+              <div><strong>{{ node.name }}</strong><small>{{ agentStatus(node.name) }}</small></div>
+            </div>
+          }
+        </div>
+        @if (activeAgent; as runningAgent) {
+          <div class="active-agent"><span class="pulse"></span><div><strong>{{ runningAgent.name }}</strong><small>{{ runningAgent.detail }}</small></div></div>
+        }
+      </section>
+
+      <section class="panel stage-panel">
+        @if (loadError) {
+          <div class="build-error" role="alert"><strong>Analysis request failed</strong><span>{{ loadError }}</span></div>
+        }
+        @if (currentBuild.status === 'Failed') {
+          <div class="build-error" role="alert"><strong>Forge stopped</strong><span>{{ currentBuild.error }}</span></div>
+        }
+        @if (currentBuild.status === 'Blocked') {
+          <div class="build-error" role="status"><strong>Validation is blocked</strong><span>{{ currentBuild.error }}</span></div>
+        }
+
+        <div class="stage-header">
+          <div><span class="panel-kicker">STEP {{ stageIndex + 1 }} OF 5</span><h2>{{ stageTitle }}</h2><p>{{ stageSubtitle }}</p></div>
+          <div class="stage-agent"><span>✦</span><div><strong>{{ activeAgent?.name ?? 'Orchestrator' }}</strong><small>Current owner</small></div></div>
+        </div>
+
+        @switch (currentBuild.stage) {
+          @case ('Understand') {
+            <div class="stage-body">
+              <div class="source-banner"><span>{{ sourceLabel }}</span><strong>{{ currentBuild.sourceText }}</strong></div>
+              <div class="agent-result-banner">
+                <div><strong>Spec Agent completed</strong><span>{{ currentBuild.requirementSummary }}</span></div>
+                <div class="agent-result-metrics"><span>{{ currentBuild.specConfidence * 100 | number:'1.0-0' }}% confidence</span><span>{{ currentBuild.agentMode }}</span></div>
+              </div>
+              <div class="section-title"><div><span>SPEC AGENT</span><h3>Requirements identified</h3></div><b>{{ currentBuild.requirements.length }} identified</b></div>
+              <div class="requirements-list">
+                @for (requirement of currentBuild.requirements; track requirement.id) {
+                  <div class="requirement-row"><span class="req-id">{{ requirement.id }}</span><div><strong>{{ requirement.text }}</strong><small>Confidence {{ requirement.confidence * 100 | number:'1.0-0' }}%</small></div><em [class.high]="requirement.priority === 'High'">{{ requirement.priority }}</em></div>
+                }
+              </div>
+              @if (currentBuild.files.length > 0) { <div class="attachment-bar"><strong>Source files</strong><span>{{ currentBuild.files.join(' · ') }}</span></div> }
+              <div class="analysis-grid">
+                <div><strong>Acceptance criteria</strong>@for (criterion of currentBuild.acceptanceCriteria; track criterion) { <span>✓ {{ criterion }}</span> }</div>
+                <div><strong>Dependencies</strong>@for (dependency of currentBuild.dependencies; track dependency) { <span>• {{ dependency }}</span> }</div>
+              </div>
+              <div class="stage-footer"><button class="secondary-button" type="button" (click)="refine()">Refine with AI</button>@if (currentBuild.approvalGate === 'requirements') { <button class="primary-button" type="button" (click)="approve('requirements')">Approve &amp; Continue →</button> }</div>
+            </div>
+          }
+
+          @case ('Design') {
+            <div class="stage-body">
+              @if (currentBuild.blueprint; as blueprint) {
+                <div class="section-title"><div><span>ARCHITECTURE AGENT</span><h3>Solution Blueprint</h3></div><b>{{ blueprint.mode }}</b></div>
+                <p class="blueprint-edit-hint">Every blueprint choice is free text. Change any technology, provider, or deployment target; the Coder Agent receives the saved values.</p>
+                <div class="architecture-map">
+                  <label class="architecture-root"><span>APPLICATION</span><input aria-label="Application name" placeholder="Application name" [value]="blueprintDraft?.application ?? blueprint.application" (input)="updateBlueprintField('application', $event)"></label>
+                  <div class="architecture-line"></div>
+                  <div class="architecture-row">
+                    <label class="arch-card"><b>UI / ANY FRAMEWORK</b><input aria-label="Frontend technology; enter any framework or stack" placeholder="React, Svelte, Vue, Flutter, or any stack" [value]="blueprintDraft?.frontend ?? blueprint.frontend" (input)="updateBlueprintField('frontend', $event)"></label>
+                    <label class="arch-card"><b>API / ANY BACKEND</b><input aria-label="Backend technology; enter any runtime or framework" placeholder="FastAPI, Spring, .NET, or any backend" [value]="blueprintDraft?.backend ?? blueprint.backend" (input)="updateBlueprintField('backend', $event)"></label>
+                    <label class="arch-card"><b>AUTH / ANY PROVIDER</b><input aria-label="Identity technology; enter any provider or approach" placeholder="Entra ID, Auth0, Cognito, or any provider" [value]="blueprintDraft?.identity ?? blueprint.identity" (input)="updateBlueprintField('identity', $event)"></label>
+                  </div>
+                  <div class="architecture-line short"></div>
+                  <div class="architecture-row">
+                    <label class="arch-card"><b>DATA / ANY STORE</b><input aria-label="Data store; enter any provider or technology" placeholder="PostgreSQL, Cosmos DB, DynamoDB, or any store" [value]="blueprintDraft?.data ?? blueprint.data" (input)="updateBlueprintField('data', $event)"></label>
+                    <label class="arch-card"><b>FILES / ANY STORAGE</b><input aria-label="File storage; enter any provider or approach" placeholder="S3, Azure Blob, local storage, or any provider" [value]="blueprintDraft?.storage ?? blueprint.storage" (input)="updateBlueprintField('storage', $event)"></label>
+                    <label class="arch-card"><b>MESSAGING / ANY QUEUE</b><input aria-label="Messaging technology; enter any provider or approach" placeholder="Kafka, RabbitMQ, Service Bus, or any queue" [value]="blueprintDraft?.messaging ?? blueprint.messaging" (input)="updateBlueprintField('messaging', $event)"></label>
+                  </div>
+                  <label class="blueprint-deployment"><b>Deployment / ANY TARGET</b><input aria-label="Deployment target; enter any cloud or hosting platform" placeholder="Azure, AWS, Kubernetes, Vercel, or any target" [value]="blueprintDraft?.deployment ?? blueprint.deployment" (input)="updateBlueprintField('deployment', $event)"></label>
+                </div>
+                <label class="blueprint-security"><strong>Security controls / ANY REQUIREMENTS</strong><textarea rows="3" placeholder="Enter the controls or security approach you want" [value]="blueprintSecurityDraft" (input)="blueprintSecurityDraft = $any($event.target).value" aria-label="Security controls, one per line"></textarea><small>Enter one control per line. Leave empty if you want the agent to recommend controls.</small></label>
+                <div class="reasoning"><h3>Design rationale</h3>@for (reason of blueprint.reasoning; track reason) { <span>- {{ reason }}</span> }</div>
+                @if (blueprint.assumptions.length > 0) { <div class="reasoning"><h3>Assumptions</h3>@for (assumption of blueprint.assumptions; track assumption) { <span>- {{ assumption }}</span> }</div> }
+                @if (blueprint.openQuestions.length > 0) { <div class="reasoning"><h3>Open decisions</h3>@for (question of blueprint.openQuestions; track question) { <span>- {{ question }}</span> }</div> }
+                <div class="stage-footer">
+                  <button class="secondary-button" type="button" [disabled]="isSavingBlueprint" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
+                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint" (click)="saveBlueprint(true)">Save &amp; Approve Blueprint &rarr;</button>
+                </div>
+              }
+            </div>
+          }
+
+          @case ('Forge') {
+            <div class="stage-body forge-body">
+              <div class="section-title"><div><span>CODER AGENT</span><h3>Code Forge</h3></div><b>{{ currentBuild.proof?.generatorMode }}</b></div>
+              <p class="blueprint-edit-hint">Generated using the approved {{ currentBuild.blueprint?.frontend }} and {{ currentBuild.blueprint?.backend }} blueprint.</p>
+              <div class="code-workspace">
+                <div class="file-tree">
+                  @for (file of codeFiles; track file) { <button class="file-row" type="button" [class.selected]="file === selectedArtifactPath" (click)="selectArtifact(file)">{{ file }}</button> }
+                </div>
+                <div class="code-editor"><div class="editor-tab">{{ selectedArtifactPath || 'Generated files' }}</div><pre><code>{{ generatedCode }}</code></pre></div>
+              </div>
+              <div class="coder-activity"><span>Approved requirements received</span><span>Approved architecture received</span><span>{{ currentBuild.proof?.files?.length ?? 0 }} file(s) generated</span></div>
+              @if (currentBuild.skillProposal; as skill) { <div class="skill-banner"><div><span>NEW SKILL PROPOSED</span><strong>{{ skill.name }} {{ skill.version }}</strong><small>{{ skill.reason }}</small></div><button class="secondary-button" type="button">Review Skill &rarr;</button></div> }
+            </div>
+          }
+
+          @case ('Prove') {
+            <div class="stage-body">
+              @if (currentBuild.proof; as proof) {
+                <div class="critic-card">
+                  <div class="section-title"><div><span>CRITIC AGENT</span><h3>Source review</h3></div><b>{{ proof.criticMode }}</b></div>
+                  <p>{{ proof.criticSummary }}</p>
+                  <div class="runtime-status"><strong>Runtime validation</strong><span>{{ proof.runtimeStatus }}</span></div>
+                </div>
+                <div class="section-title"><div><span>STATIC CHECKS</span><h3>Review results</h3></div></div>
+                <div class="analysis-grid">@for (check of (proof.checks | keyvalue); track check.key) { <div><strong>{{ check.key }}</strong><span>{{ check.value }}</span></div> }</div>
+                @if (proof.criticFindings.length > 0) {
+                  <div class="section-title"><div><span>FINDINGS</span><h3>Issues to review</h3></div><b>{{ proof.criticFindings.length }} found</b></div>
+                  <div class="requirements-list critic-findings-list">@for (finding of proof.criticFindings; track $index) { <article class="requirement-row"><em>{{ finding.severity }}</em><div><strong>{{ finding.issue }}</strong><small>{{ finding.file ?? 'Project-wide' }} &middot; {{ finding.recommendation }}</small></div></article> }</div>
+                } @else { <p class="blueprint-edit-hint">No source-level findings were reported. This is not a runtime test result.</p> }
+                @if (proof.requirementCoverage.length > 0) { <div class="analysis-grid"><div><strong>Requirement coverage review</strong>@for (item of proof.requirementCoverage; track $index) { <span>{{ item }}</span> }</div></div> }
+                @if (proof.testPlan.length > 0) { <div class="analysis-grid"><div><strong>Sandbox test plan</strong>@for (item of proof.testPlan; track $index) { <span>{{ item }}</span> }</div></div> }
+                <p class="blueprint-edit-hint">This run's generated files were not executed. Skill promotion stays blocked until isolated runtime checks pass.</p>
+                @if (currentBuild.approvalGate === 'skill') { <div class="approval-banner"><div><strong>Human approval required</strong><span>Review the validation result before promoting the reusable skill.</span></div><button class="primary-button" type="button" (click)="approve('skill')">Approve Skill Promotion &rarr;</button></div> }
+              }
+            </div>
+          }
+
+          @case ('Release') {
+            <div class="stage-body">
+              <div class="section-title"><div><span>SECURITY + DEPLOYER</span><h3>Release Gate</h3></div><b>Human approval required</b></div>
+              <div class="release-layout"><div class="gate-list">@for (check of releaseChecks; track check) { <div><span>✓</span>{{ check }}</div> }</div><div class="target-card"><span>DEPLOYMENT TARGET</span><strong>Azure Container Apps</strong><p>Internal environment · private network · no public ingress</p><div><b>Entra ID</b><b>Managed Identity</b><b>Defender</b></div></div></div>
+              <div class="stage-footer"><button class="secondary-button" type="button">Request Changes</button><button class="primary-button" type="button" (click)="approve('release')">Approve &amp; Deploy →</button></div>
+            </div>
+          }
+
+          @case ('Replay') {
+            <div class="stage-body"><div class="metrics-grid"><div><strong>{{ currentBuild.metrics.tokens | number }}</strong><span>Tokens Used</span></div><div><strong>{{ currentBuild.metrics.toolCalls }}</strong><span>Agent Tool Calls</span></div><div><strong>{{ currentBuild.metrics.selfHealIterations }}</strong><span>Self-Heal Iterations</span></div><div><strong>{{ currentBuild.metrics.successRate }}%</strong><span>Success Rate</span></div></div><div class="replay-list">@for (event of currentBuild.audit; track $index) { <div><time>{{ event.time }}</time><strong>{{ event.stage }}</strong><span>{{ event.message }}</span></div> }</div></div>
+          }
+
+          @default { <div class="empty-stage"><div class="spinner"></div><h3>Preparing your Forge…</h3><p>The Orchestrator is starting the governed agent workflow.</p></div> }
+        }
+      </section>
+
+      <aside class="panel timeline-panel">
+        <div class="panel-heading"><div><span class="panel-kicker">AUDIT TRAIL</span><h2>Build Timeline</h2><p>Critical operations are auditable</p></div><span class="audit-count">{{ currentBuild.audit.length }}</span></div>
+        <div class="timeline-list">
+          @for (event of currentBuild.audit.slice(-9).reverse(); track $index) {
+            <div class="timeline-event" [class.warning]="event.severity === 'warning'" [class.error]="event.severity === 'error'"><time>{{ event.time }}</time><span class="timeline-dot"></span><div><strong>{{ event.stage }}</strong><p>{{ event.message }}</p><small>{{ event.agent ?? 'Orchestrator' }}</small></div></div>
+          }
+        </div>
+        <div class="agentops-card"><span>AGENTOPS</span><div><strong>{{ currentBuild.metrics.tokens | number }}</strong><small>tokens</small></div><div><strong>{{ currentBuild.metrics.toolCalls }}</strong><small>tool calls</small></div><div><strong>{{ currentBuild.metrics.selfHealIterations }}</strong><small>self-heal</small></div></div>
+      </aside>
+    </div>
+  </section>
+} @else if (loadError) {
+  <section class="build-loading" role="alert"><h2>Unable to load Forge workspace</h2><p>{{ loadError }}</p></section>
+} @else {
+  <section class="build-loading"><div class="spinner"></div><h2>Loading Forge workspace…</h2><p>Connecting to the Orchestrator.</p></section>
+}

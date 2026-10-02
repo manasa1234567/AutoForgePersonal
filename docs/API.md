@@ -1,0 +1,65 @@
+# API Contract — Demo Mode
+
+Base URL: `http://127.0.0.1:8000`
+
+## Health
+
+`GET /api/health`
+
+## Create build
+
+`POST /api/builds`
+
+```json
+{
+  "source_type": "usecase",
+  "title": "Customer Onboarding Enhancement",
+  "source_text": "Build a secure customer onboarding service...",
+  "files": ["requirements.docx", "api-spec.yaml"],
+  "file_contents": [
+    { "name": "api-spec.yaml", "content_base64": "<base64-encoded file bytes>" }
+  ]
+}
+```
+
+`file_contents` is optional and limited to 10 files / 15 MB combined. Supported formats are OpenAPI YAML/JSON, text, Markdown, PDF with selectable text, and DOCX. For `source_type: "openapi"`, provide exactly one YAML/JSON file or one pasted contract. Extracted source text is capped at 20,000 characters before analysis.
+
+## Start build
+
+`POST /api/builds/{buildId}/start`
+
+Starts the asynchronous orchestration workflow.
+
+## Get build
+
+`GET /api/builds/{buildId}`
+
+The Angular UI polls this endpoint every second in demo mode.
+
+## Approve gate
+
+`POST /api/builds/{buildId}/approve`
+
+```json
+{ "gate": "requirements" }
+```
+
+Allowed gates: `requirements`, `blueprint`, `skill`, `release`.
+
+## Update the proposed blueprint
+
+`PUT /api/builds/{buildId}/blueprint` is available while the blueprint approval gate is pending. It accepts the editable application, frontend, backend, data, storage, messaging, identity, deployment, and security choices. The update is saved to the build and recorded in the audit trail. Blueprint approval then passes the saved choices to the Coder Agent.
+
+## Refine
+
+`POST /api/builds/{buildId}/refine`
+
+```json
+{ "text": "Add explicit authentication and retry requirements." }
+```
+
+## Events
+
+`GET /api/builds/{buildId}/events`
+
+Returns the audit trail for the build.

@@ -1,0 +1,19 @@
+{
+  "name": "aegis-ai-autoforge-buildathon",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "install:frontend": "npm install --workspace frontend",
+    "start": "npm run start:frontend",
+    "start:frontend": "npm run start --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "test": "npm run test --workspace frontend",
+    "start:backend": "python -m uvicorn app.main:app --reload --app-dir backend"
+  },
+  "engines": {
+    "node": "^20.11.1 || ^22.0.0"
+  }
+}

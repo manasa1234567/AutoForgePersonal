@@ -1,0 +1,6 @@
+Add pytest tests under backend/tests as the next implementation step. The first tests should cover:
+- create build validation
+- safety block
+- approval gate ordering
+- self-healing iterations
+- release only after security approval

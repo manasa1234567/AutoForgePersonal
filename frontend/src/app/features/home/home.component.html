@@ -1,0 +1,155 @@
+﻿<section class="home-page">
+  <header class="home-header">
+    <div class="product-lockup">
+      <div class="aegis-mark">A</div>
+      <div class="product-name">Aegis<span>AI</span></div>
+      <div class="header-divider"></div>
+      <div class="product-description">
+        <strong>Autonomous Engineering, Governance &amp; Intelligence System</strong>
+        <span>From specification to production — AI agents that build, prove and continuously improve.</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="search-box"><span>⌕</span><span>Search builds, skills, agents…</span></div>
+      <button class="icon-button" type="button" aria-label="Notifications">♢</button>
+      <div class="user-avatar">MS</div>
+      <div class="user-info"><strong>Manasa</strong><span>Developer</span></div>
+    </div>
+  </header>
+
+  <section class="home-hero">
+    <div class="hero-main">
+      <div class="eyebrow">AI ENGINEERING WORKSPACE</div>
+      <h1>What are we building today?</h1>
+      <p>Turn an idea, Jira story, specification or engineering document into a governed, production-ready application.</p>
+
+      <div class="input-preview" aria-label="Forge input options">
+        @for (source of sourceOptions; track source.id) {
+          <button type="button" class="input-chip" (click)="openForge(); selectSource(source.id)">
+            <span>{{ source.icon }}</span>{{ source.label }}
+          </button>
+        }
+      </div>
+
+      <div class="forge-callout">
+        <div class="forge-orb"><span>✦</span></div>
+        <div class="forge-callout-copy">
+          <span class="callout-label">START WITH ANYTHING</span>
+          <strong>Give AutoForge the intent. It will build the path.</strong>
+          <span>Jira • API contract • documents • use case • plain-language requirement</span>
+        </div>
+        <button class="primary-button" type="button" (click)="openForge()">Start Forge <span>→</span></button>
+      </div>
+    </div>
+
+    <aside class="hero-side">
+      <div class="side-kicker">WHY AUTOFORGE?</div>
+      <div class="value-row">
+        <span>01</span>
+        <div><strong>Understand</strong><small>Convert engineering intent into testable requirements.</small></div>
+      </div>
+      <div class="value-row">
+        <span>02</span>
+        <div><strong>Prove</strong><small>Generate, test, detect failures and self-heal safely.</small></div>
+      </div>
+      <div class="value-row">
+        <span>03</span>
+        <div><strong>Govern</strong><small>Human approvals, security gates and complete auditability.</small></div>
+      </div>
+      <div class="team-callout">
+        <div class="mini-orb">✦</div>
+        <div><strong>Agents work as a team</strong><small>Spec → Plan → Code → Critic → Security → Deploy</small></div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="journey-strip">
+    <div class="journey-intro"><span>THE FORGE JOURNEY</span><strong>One governed path from intent to running software.</strong></div>
+    <div class="journey-line">
+      <div class="journey-node active"><b>1</b><span>Understand</span></div>
+      <i></i>
+      <div class="journey-node"><b>2</b><span>Design</span></div>
+      <i></i>
+      <div class="journey-node"><b>3</b><span>Forge</span></div>
+      <i></i>
+      <div class="journey-node"><b>4</b><span>Prove</span></div>
+      <i></i>
+      <div class="journey-node"><b>5</b><span>Release</span></div>
+    </div>
+  </section>
+
+  <section class="recent-section">
+    <div class="section-heading"><div><span>WORKSPACE</span><strong>Recent builds</strong></div><a routerLink="/builds">View all →</a></div>
+    <div class="recent-grid">
+      @if (recentBuildsLoading) {
+        <p class="recent-state">Loading recent builds…</p>
+      } @else if (recentBuildsUnavailable) {
+        <p class="recent-state">Build history is unavailable. Check the backend connection.</p>
+      } @else if (recentBuilds.length === 0) {
+        <p class="recent-state">No builds yet. Start a new build to see it here.</p>
+      } @else {
+        @for (recent of recentBuilds; track recent.id) {
+          <a class="recent-card" [routerLink]="['/build', recent.id]">
+            <div class="recent-top"><span class="build-icon">A</span><span class="status" [class]="statusClass(recent.status)">{{ recent.status }}</span></div>
+            <strong>{{ recent.title }}</strong>
+            <small>{{ recent.sourceType }} · {{ lastActivity(recent) }}</small>
+          </a>
+        }
+      }
+    </div>
+  </section>
+
+  <footer class="brand-footer"><span>TEKsystems Global Services</span><i></i><span>Master the momentum of technology.</span></footer>
+
+  @if (forgeOpen) {
+    <div class="forge-overlay" role="presentation" (click)="closeForge()">
+      <section class="forge-modal" role="dialog" aria-modal="true" aria-labelledby="forge-title" (click)="$event.stopPropagation()">
+        <header class="modal-header">
+          <div><span class="eyebrow">NEW FORGE</span><h2 id="forge-title">What should AutoForge understand?</h2><p>Choose any approved engineering input. Jira is optional.</p></div>
+          <button class="close-button" type="button" aria-label="Close" (click)="closeForge()">×</button>
+        </header>
+
+        <div class="intake-scroll">
+        <div class="source-grid">
+          @for (source of sourceOptions; track source.id) {
+            <button type="button" class="source-card" [class.selected]="selectedSource === source.id" (click)="selectSource(source.id)">
+              <span class="source-card-icon">{{ source.icon }}</span>
+              <span><strong>{{ source.label }}</strong><small>{{ source.description }}</small></span>
+              <i>{{ selectedSource === source.id ? '✓' : '→' }}</i>
+            </button>
+          }
+        </div>
+
+        <form id="forge-intake-form" [formGroup]="intakeForm" (ngSubmit)="startForge()" class="intake-form">
+          @if (isJiraSource) {
+            <div class="form-grid jira-intake">
+              <label>Jira issue key<input type="text" formControlName="sourceText" placeholder="e.g. PAY-142">@if (sourceTextError) { <small class="field-error">Enter a Jira issue key (at least 3 characters).</small> }</label>
+              <div class="jira-context"><strong>Jira Cloud work item</strong><span>Enter the issue key. The backend connector loads its summary and description; acceptance criteria can be mapped from your Jira custom field.</span></div>
+            </div>
+          } @else {
+            <div class="form-grid">
+              <label>{{ selectedSource === 'openapi' ? 'Service / build name (optional)' : selectedSource === 'upload' ? 'Project name (optional)' : 'Build name (optional)' }}<input type="text" formControlName="title" placeholder="Generated from your input if left blank">@if (titleError) { <small class="field-error">Enter at least 3 characters, or leave the name blank.</small> }</label>
+              <label>Input type<strong class="selected-source">{{ selectedOption.title }}</strong></label>
+            </div>
+            @if (selectedSource !== 'upload') {
+              <label>{{ selectedSource === 'openapi' ? 'API contract / specification' : selectedSource === 'architecture' ? 'Architecture decisions and constraints' : selectedSource === 'usecase' ? 'Capability to build' : 'Engineering requirement' }}<textarea rows="5" formControlName="sourceText" [placeholder]="selectedOption.placeholder"></textarea>@if (sourceTextError) { <small class="field-error">Enter at least 10 characters of {{ selectedSource === 'usecase' ? 'capability details' : 'input details' }} to start analysis.</small> }</label>
+            } @else {
+              <p class="upload-hint">Add the approved engineering documents AutoForge should use as its source of truth.</p>
+              @if (filesError) { <small class="field-error upload-error">Choose at least one engineering document to continue.</small> }
+            }
+          }
+          <div class="upload-row">
+            <label class="upload-control"><input type="file" multiple (change)="onFilesSelected($event)" accept=".yaml,.yml,.json,.pdf,.docx,.txt,.md"><span>{{ readingFiles ? 'Reading documents…' : '＋ Add engineering documents' }}</span></label>
+            @if (selectedFiles.length > 0) { <span class="file-count">{{ selectedFiles.length }} file(s) selected</span> }
+          </div>
+          @if (errorMessage) { <div class="error-message" role="alert">{{ errorMessage }}</div> }
+        </form>
+        </div>
+          <footer class="modal-footer"><span>AutoForge will first validate and understand the input before generating code.</span><button class="primary-button" type="submit" form="forge-intake-form" [disabled]="submitting || readingFiles">{{ submitting ? 'Creating Forge…' : 'Start Analysis' }} <span>→</span></button></footer>
+      </section>
+    </div>
+  }
+</section>
+
+

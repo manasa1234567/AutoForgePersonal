@@ -1,0 +1,115 @@
+:root { --tgs-navy:#021A32; --tgs-blue:#0095D3; --tgs-teal:#007698; --tgs-lime:#C5D92D; --tgs-gray:#F5F5F5; --ink:var(--tgs-navy); --muted:#536575; --border:#dce5eb; --indigo:var(--tgs-blue); --violet:var(--tgs-teal); --page:#f5f7f8; }
+* { box-sizing:border-box; }
+html,body { margin:0; min-height:100%; background:var(--page); color:var(--ink); font-family:"Proxima Nova","Aptos","Segoe UI",sans-serif; }
+body { font-size:14px; }
+button,input,textarea { font:inherit; }
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible { outline:3px solid #A4D7F4; outline-offset:2px; }
+
+/* TGS visual system: a calm navy foundation, blue and teal actions, restrained lime accents. */
+h1,h2,h3,.product-name,.brand-name { font-family:"Museo Slab",Georgia,serif; }
+.app-shell { background:#f5f7f8; }
+.sidebar { background:#021A32; border-color:#16334a; }
+.brand { color:#fff; }
+.brand-mark { background:#0095D3; border-radius:8px; }
+.brand-name span { color:#A4D7F4; }
+.navigation a { color:#c3d0da; }
+.navigation a .nav-icon { color:#9fb5c6; }
+.navigation a:hover,.navigation a.active { background:#103c55; color:#fff; }
+.navigation a.active { box-shadow:inset 3px 0 #C5D92D; }
+.navigation a.active .nav-icon { color:#C5D92D; }
+.sidebar-footer { border-color:#244159; color:#a8bac7; font-size:9px; letter-spacing:.04em; }
+.sidebar-footer strong { color:#d6e2ea; font-size:10px; }
+
+/* Shared visual treatment for the home, intake, and Forge workspaces. */
+.home-page,.build-page { background:#f5f7f8 !important; color:#021A32 !important; }
+.product-description span,.hero-main > p,.value-row small,.recent-card > small,.breadcrumb,.build-heading p { color:#526474 !important; }
+.product-name span,.eyebrow,.side-kicker,.journey-intro span,.section-heading span,.callout-label,.panel-kicker,.section-title span { color:#007698 !important; }
+.hero-main,.hero-side,.journey-strip,.recent-card,.panel,.journey { background:#fff !important; border-color:#dce5eb !important; box-shadow:0 5px 18px rgba(2,26,50,.045) !important; }
+.hero-main,.hero-side { border-radius:10px !important; }
+.forge-callout,.team-callout,.active-agent,.stage-agent,.source-banner,.architecture-root,.target-card,.approval-banner { background:#f2f8fb !important; border-color:#c9e2ee !important; }
+.forge-orb,.mini-orb { background:#007698 !important; box-shadow:none !important; }
+.primary-button { background:#0095D3 !important; box-shadow:none !important; border-radius:6px !important; }
+.primary-button:hover { background:#007eaf !important; }
+.secondary-button { color:#021A32 !important; border-color:#bfd0db !important; border-radius:6px !important; }
+.input-chip,.source-card,.recent-card,.arch-card,.requirements-list,.code-workspace,.proof-summary,.critic-card,.gate-list,.replay-list { border-color:#dce5eb !important; }
+.input-chip span,.source-card-icon,.source-card i,.build-icon { color:#0095D3 !important; }
+.source-card-icon,.build-icon { background:#eaf5fa !important; }
+.input-chip:hover,.source-card.selected { border-color:#0095D3 !important; background:#f0f8fc !important; box-shadow:0 0 0 2px #d7edf7 !important; }
+.source-card.selected i,.journey-step.active,.journey-node.active { color:#0095D3 !important; }
+.journey-step.active span,.journey-node.active b { background:#0095D3 !important; border-color:#0095D3 !important; }
+.journey-step.done span { color:#007698 !important; border-color:#007698 !important; }
+.journey > i.complete { background:#007698 !important; }
+.status-pill,.status.success,.requirement-row em { color:#006b5d !important; background:#e8f4f1 !important; }
+.progress-pill,.status.approval,.selected-source { color:#007698 !important; background:#eaf5fa !important; }
+.status.healing { color:#714b00 !important; background:#fff4da !important; }
+.status.progress { color:#075d82 !important; background:#eaf5fa !important; }
+.intake-form input:focus,.intake-form textarea:focus { border-color:#0095D3 !important; box-shadow:0 0 0 3px #dff1f8 !important; }
+.forge-overlay { background:rgba(2,26,50,.48) !important; }
+.forge-modal { border-color:#dce5eb !important; border-radius:12px !important; box-shadow:0 24px 70px rgba(2,26,50,.2) !important; }
+.score-ring { background:radial-gradient(circle at center,#fff 58%,transparent 59%),conic-gradient(#007698 0 92%,#e5eaed 92%) !important; }
+.req-id { color:#007698 !important; }
+.timeline-dot { background:#007698 !important; box-shadow:0 0 0 3px #e8f4f1 !important; }
+.architecture-root span,.arch-card b { color:#0095D3 !important; }
+.agent-result-banner,.skill-banner { border-color:#c9e2ee !important; background:#f2f8fb !important; }
+.agent-result-metrics span,.target-card b { color:#007698 !important; background:#eaf5fa !important; }
+.spinner { border-color:#cfe9f3 !important; border-top-color:#0095D3 !important; }
+.brand-footer { display:flex; align-items:center; justify-content:center; gap:12px; max-width:1500px; margin:20px auto 0; color:#526474; font-size:11px; }
+.brand-footer span:first-child { color:#021A32; font-weight:650; }
+.brand-footer i { width:1px; height:14px; background:#b7c8d3; }
+h1,h2,h3,.product-name,.brand-name { font-family:"Museo Slab",Georgia,serif !important; }
+.sidebar,.app-shell { background:#021A32 !important; }
+.app-shell { background:#f5f7f8 !important; }
+.brand { color:#fff !important; }
+.brand-mark { background:#0095D3 !important; }
+.brand-name span { color:#A4D7F4 !important; }
+.navigation a { color:#c3d0da !important; }
+.navigation a .nav-icon { color:#9fb5c6 !important; }
+.navigation a:hover,.navigation a.active { background:#103c55 !important; color:#fff !important; }
+.navigation a.active { box-shadow:inset 3px 0 #C5D92D !important; }
+.navigation a.active .nav-icon { color:#C5D92D !important; }
+.product-description strong { font-size:14px !important; }
+.product-description span { font-size:12px !important; }
+.hero-main h1 { font-size:40px !important; letter-spacing:-1px !important; }
+.hero-main > p { font-size:15px !important; }
+.eyebrow,.side-kicker,.journey-intro span,.section-heading span { font-size:11px !important; }
+.input-chip { padding:10px 12px !important; font-size:12px !important; }
+.forge-callout-copy strong { font-size:14px !important; }
+.forge-callout-copy > span:last-child,.value-row small,.team-callout small { font-size:11px !important; }
+.value-row strong,.team-callout strong { font-size:13px !important; }
+.journey-node { font-size:11px !important; }
+.journey-intro strong,.recent-card > strong { font-size:13px !important; }
+.recent-card > small { font-size:10px !important; }
+.source-card { min-height:82px !important; }
+.source-card strong { font-size:12px !important; }
+.source-card small { font-size:10px !important; }
+.intake-form label { font-size:11px !important; }
+.intake-form input,.intake-form textarea { font-size:13px !important; }
+.selected-source { font-size:12px !important; }
+.jira-context strong { font-size:11px !important; }
+.jira-context span,.upload-hint { font-size:11px !important; }
+.modal-header h2 { font-size:27px !important; }
+.modal-header p { font-size:12px !important; }
+.modal-footer > span { font-size:10px !important; }
+.build-heading h1 { font-size:27px !important; }
+.breadcrumb,.build-heading p { font-size:12px !important; }
+.journey-step { font-size:11px !important; }
+.panel-heading h2 { font-size:16px !important; }
+.panel-heading p,.stage-header p { font-size:11px !important; }
+.stage-header h2 { font-size:19px !important; }
+.stage-body { font-size:12px !important; }
+.source-banner strong,.requirement-row strong,.agent-result-banner strong { font-size:12px !important; }
+.requirement-row small,.source-banner span,.section-title > b { font-size:10px !important; }
+.section-title h3 { font-size:14px !important; }
+.timeline-event strong { font-size:10px !important; }
+.timeline-event p { font-size:10px !important; }
+.timeline-event small,.timeline-event time { font-size:9px !important; }
+.agentops-card small { font-size:9px !important; }
+.forge-modal { display:flex !important; flex-direction:column !important; overflow:hidden !important; max-height:calc(100vh - 48px) !important; }
+.intake-scroll { flex:1 1 auto !important; min-height:0 !important; overflow-y:auto !important; overflow-x:hidden !important; overscroll-behavior:contain; }
+.source-grid { max-height:none !important; overflow:visible !important; }
+.intake-form { display:block !important; min-height:0 !important; overflow:visible !important; }
+.modal-footer { position:static !important; z-index:auto !important; flex:0 0 auto !important; background:#fff !important; box-shadow:0 -8px 16px rgba(2,26,50,.045) !important; }
+.intake-form .field-error { color:#a33b2d !important; font-size:11px !important; font-weight:500 !important; }
+.intake-form .upload-error { margin:0 0 10px; }
+.brand-footer { font-size:12px !important; }
+@media (max-width:760px) { .brand-footer { flex-wrap:wrap; font-size:10px; } }

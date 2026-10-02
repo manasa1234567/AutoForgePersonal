@@ -1,0 +1,48 @@
+﻿<section class="builds-page">
+  <header class="builds-header">
+    <div>
+      <span class="page-kicker">WORKSPACE</span>
+      <h1>Builds</h1>
+      <p>Review recent Forge runs and continue where you left off.</p>
+    </div>
+    <a class="new-build-button" routerLink="/new-build">＋ New Build</a>
+  </header>
+
+  <div class="builds-toolbar">
+    <strong>{{ builds.length }} {{ builds.length === 1 ? 'build' : 'builds' }}</strong>
+    <span>Latest first · local session</span>
+  </div>
+
+  @if (loading) {
+    <div class="builds-message"><span class="spinner"></span><strong>Loading builds…</strong></div>
+  } @else if (errorMessage) {
+    <div class="builds-message error" role="alert"><strong>Could not load builds</strong><span>{{ errorMessage }}</span></div>
+  } @else if (builds.length === 0) {
+    <div class="builds-message empty">
+      <span class="empty-mark">A</span>
+      <strong>No builds yet</strong>
+      <span>Start with a use case, requirement, Jira item, API contract, or approved document.</span>
+      <a routerLink="/new-build">Create your first build →</a>
+    </div>
+  } @else {
+    <div class="build-list" aria-label="Build history">
+      @for (build of builds; track build.id) {
+        <a class="build-row" [routerLink]="['/build', build.id]">
+          <span class="build-mark">A</span>
+          <span class="build-main">
+            <strong>{{ build.title }}</strong>
+            <small>{{ build.sourceType }} · {{ build.stage }} · {{ lastActivity(build) }}</small>
+          </span>
+          <span class="build-progress" aria-label="Build progress">
+            <span><i [style.width.%]="build.progress"></i></span>
+            <small>{{ build.progress }}%</small>
+          </span>
+          <span class="build-status" [class]="statusClass(build.status)">{{ build.status }}</span>
+          <span class="row-arrow" aria-hidden="true">→</span>
+        </a>
+      }
+    </div>
+  }
+
+  <p class="storage-note">Local development storage: builds are held in memory and are cleared when the backend restarts. Azure persistence will be connected in a later integration step.</p>
+</section>
