@@ -1,9 +1,7 @@
 name: CD - Azure
 
 on:
-  workflow_run:
-    workflows: ["CI"]          # must match `name: CI` in ci.yml exactly
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:           # keep for manual runs
 
