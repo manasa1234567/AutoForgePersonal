@@ -41,7 +41,7 @@ class SourceFileContent(ApiModel):
         return value
 
 SourceType = Literal["jira", "openapi", "architecture", "upload", "usecase", "requirement"]
-ApprovalGate = Literal["requirements", "blueprint", "skill", "release"]
+ApprovalGate = Literal["requirements", "blueprint", "artifacts", "skill", "release"]
 SpecReadiness = Literal["READY", "NEEDS_CLARIFICATION"]
 SkillStatus = Literal["draft", "pending_approval", "approved", "deprecated", "rejected"]
 

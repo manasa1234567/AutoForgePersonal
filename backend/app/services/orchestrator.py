@@ -285,14 +285,18 @@ class Orchestrator:
             "Coder Agent",
             metadata={"files": len(build.proof.files), "mode": result.mode},
         )
+        build.stage = "Forge"
+        build.status = "Awaiting Approval"
+        build.approval_gate = "artifacts"
+        build.progress = 66
         self._build_repository.save(build)
-        await self._prove(build)
 
     async def _prove(self, build: BuildState) -> None:
         self._set_agent(build, "Critic Agent", "Running", "Reviewing generated artifacts without executing them")
         build.stage = "Prove"
         build.progress = 72
         self._build_repository.save(build)
+
         if build.proof is None:
             raise RuntimeError("Proof result is missing before critic execution")
         if build.blueprint is None:
@@ -423,6 +427,54 @@ class Orchestrator:
         self._set_agent(build, "Skill Agent", "Ready", "No eligible reusable skill candidate was produced in this build")
         self._add_event(build, "Skills", "No new reusable skill candidate was promoted by this build", "Skill Agent")
         await self._security(build)
+
+    async def refine_artifacts(self, build_id: str, feedback: str) -> BuildState:
+        build = self.get(build_id)
+        if build.approval_gate != "artifacts" or build.proof is None or build.blueprint is None:
+            raise ValueError("Artifact changes are only available while generated files await review")
+        if build.proof.generator_mode != "foundry-agent":
+            raise ValueError("AI artifact changes require the Foundry Coder Agent")
+
+        build.status = "Running"
+        build.approval_gate = None
+        self._set_agent(build, "Coder Agent", "Running", "Applying review feedback to generated files")
+        self._build_repository.save(build)
+        recipes = skill_registry.retrieve(agent="Coder Agent", query=self._skill_query(build), limit=5)
+        try:
+            result = await self._agent_service.run_coder_agent(
+                title=build.title,
+                blueprint=build.blueprint,
+                requirements=build.requirements,
+                acceptance_criteria=build.acceptance_criteria,
+                skills=recipes,
+                previous_artifacts=build.proof.artifacts,
+                repair_findings=[{
+                    "severity": "Human review feedback",
+                    "issue": feedback.strip(),
+                    "recommendation": "Revise the generated project to address this user-requested change while preserving the approved requirements and blueprint.",
+                }],
+            )
+        except Exception:
+            build.status = "Awaiting Approval"
+            build.approval_gate = "artifacts"
+            self._set_agent(build, "Coder Agent", "Ready", "Artifact revision failed; previous files are retained")
+            self._build_repository.save(build)
+            raise
+
+        build.proof.files = list(result.files)
+        build.proof.artifacts = result.files
+        build.proof.generator_mode = result.mode
+        build.skills_used.extend(result.skills_used)
+        build.metrics.tokens += result.tokens
+        if result.mode == "foundry-agent":
+            build.metrics.tool_calls += 1
+            self._record_skill_retrieval(build, recipes, "Coder Agent")
+        self._set_agent(build, "Coder Agent", "Ready", f"Revised {len(result.files)} file(s) from human feedback")
+        self._add_event(build, "Forge", "Coder Agent revised artifacts from human review feedback", "Coder Agent", metadata={"files": len(result.files)})
+        build.status = "Awaiting Approval"
+        build.approval_gate = "artifacts"
+        self._build_repository.save(build)
+        return build
 
     async def _security(self, build: BuildState) -> None:
         self._set_agent(build, "Security Reviewer", "Running", "Running security and policy checks")
@@ -570,6 +622,14 @@ class Orchestrator:
             build.status = "Running"
             try:
                 await self._forge(build)
+            except Exception as exc:
+                self._fail(build, str(exc))
+                self._build_repository.save(build)
+                return build
+        elif gate == "artifacts":
+            build.status = "Running"
+            try:
+                await self._prove(build)
             except Exception as exc:
                 self._fail(build, str(exc))
                 self._build_repository.save(build)

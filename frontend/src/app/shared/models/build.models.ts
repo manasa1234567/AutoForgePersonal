@@ -1,7 +1,7 @@
 export type SourceType = 'jira' | 'openapi' | 'architecture' | 'upload' | 'usecase' | 'requirement';
 export type BuildStage = 'Draft' | 'Understand' | 'Design' | 'Forge' | 'Prove' | 'Release' | 'Replay' | 'Error';
 export type BuildStatus = 'Draft' | 'Running' | 'Awaiting Approval' | 'Refined' | 'Deployed' | 'Blocked' | 'Failed';
-export type ApprovalGate = 'requirements' | 'blueprint' | 'skill' | 'release' | null;
+export type ApprovalGate = 'requirements' | 'blueprint' | 'artifacts' | 'skill' | 'release' | null;
 
 export interface BuildCreateRequest {
   sourceType: SourceType;

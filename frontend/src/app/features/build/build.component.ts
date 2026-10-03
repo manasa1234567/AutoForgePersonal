@@ -56,6 +56,9 @@ export class BuildComponent implements OnInit {
 
   isSavingBlueprint = false;
   approvingGate: Exclude<ApprovalGate, null> | null = null;
+  isRefiningArtifacts = false;
+  artifactFeedback = '';
+  artifactMessage: string | null = null;
   isRunningSecurityReview = false;
   isPreparingDeployment = false;
   isRefiningRequirements = false;
@@ -344,6 +347,18 @@ get codeFiles(): string[] {
     });
   }
 
+  get artifactsZipUrl(): string | null {
+    return this.build?.proof?.artifacts && Object.keys(this.build.proof.artifacts).length
+      ? `/api/builds/${encodeURIComponent(this.build.id)}/artifacts.zip?rev=${this.build.audit.length}`
+      : null;
+  }
+
+  get previewUrl(): string | null {
+    return this.build?.proof?.artifacts?.['preview/index.html']
+      ? `/api/builds/${encodeURIComponent(this.build.id)}/preview?rev=${this.build.audit.length}`
+      : null;
+  }
+
 
 
   refine(): void {
@@ -375,6 +390,31 @@ get codeFiles(): string[] {
       },
     });
 
+  }
+
+  requestArtifactRevision(): void {
+    const feedback = this.artifactFeedback.trim();
+    if (!this.build || !feedback || this.isRefiningArtifacts || this.approvingGate) return;
+
+    this.isRefiningArtifacts = true;
+    this.artifactMessage = null;
+    this.loadError = null;
+    this.cdr.markForCheck();
+    this.api.refineArtifacts(this.build.id, feedback).subscribe({
+      next: (build) => {
+        this.build = build;
+        this.selectFirstArtifact(build);
+        this.artifactFeedback = '';
+        this.artifactMessage = 'Updated files are ready. Review the preview and ZIP again before continuing.';
+        this.isRefiningArtifacts = false;
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        this.loadError = this.describeError(error, 'The generated files could not be revised.');
+        this.isRefiningArtifacts = false;
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   runSecurityReview(): void {
