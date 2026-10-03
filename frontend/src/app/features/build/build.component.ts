@@ -56,9 +56,6 @@ export class BuildComponent implements OnInit {
 
   isSavingBlueprint = false;
   approvingGate: Exclude<ApprovalGate, null> | null = null;
-  isRefiningArtifacts = false;
-  artifactFeedback = '';
-  artifactMessage: string | null = null;
   isRunningSecurityReview = false;
   isPreparingDeployment = false;
   isRefiningRequirements = false;
@@ -83,18 +80,6 @@ export class BuildComponent implements OnInit {
     { name: 'Deployer Agent', icon: 'D', position: 'node-deployer' },
 
   ];
-
-get codeFiles(): string[] {
-    return this.build?.proof?.files ?? [];
-  }
-
-  get generatedCode(): string {
-    const artifacts = this.build?.proof?.artifacts;
-    return (this.selectedArtifactPath && artifacts?.[this.selectedArtifactPath]) || 'No generated source file selected.';
-  }
-
-  selectedArtifactPath = '';
-
 
   ngOnInit(): void {
 
@@ -134,7 +119,6 @@ get codeFiles(): string[] {
       next: (build) => {
 
         this.build = build;
-        this.selectFirstArtifact(build);
         if (build.blueprint && !this.blueprintDraft) {
 
           this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
@@ -331,7 +315,6 @@ get codeFiles(): string[] {
         this.build = build;
         this.loadError = null;
         this.approvingGate = null;
-        this.selectFirstArtifact(build);
         if (build.blueprint && !this.blueprintDraft) {
           this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
           this.blueprintSecurityDraft = build.blueprint.security.join('\n');
@@ -350,7 +333,6 @@ get codeFiles(): string[] {
         this.api.getBuild(this.build!.id).subscribe({
           next: (latestBuild) => {
             this.build = latestBuild;
-            this.selectFirstArtifact(latestBuild);
             const gateChanged = latestBuild.approvalGate !== gate;
             this.loadError = gateChanged
               ? `The ${gate} approval request was accepted, but the response timed out. The workspace state has been refreshed.`
@@ -375,16 +357,6 @@ get codeFiles(): string[] {
       ? `/api/builds/${encodeURIComponent(this.build.id)}/artifacts.zip?rev=${this.build.audit.length}`
       : null;
   }
-
-  get previewUrl(): string | null {
-    // The backend can build a requirements-based visual fallback when the
-    // Coder Agent omits the optional standalone preview file.
-    return this.build?.proof?.artifacts && Object.keys(this.build.proof.artifacts).length > 0
-      ? `/api/builds/${encodeURIComponent(this.build.id)}/preview?rev=${this.build.audit.length}`
-      : null;
-  }
-
-
 
   refine(): void {
 
@@ -415,31 +387,6 @@ get codeFiles(): string[] {
       },
     });
 
-  }
-
-  requestArtifactRevision(): void {
-    const feedback = this.artifactFeedback.trim();
-    if (!this.build || !feedback || this.isRefiningArtifacts || this.approvingGate) return;
-
-    this.isRefiningArtifacts = true;
-    this.artifactMessage = null;
-    this.loadError = null;
-    this.cdr.markForCheck();
-    this.api.refineArtifacts(this.build.id, feedback).subscribe({
-      next: (build) => {
-        this.build = build;
-        this.selectFirstArtifact(build);
-        this.artifactFeedback = '';
-        this.artifactMessage = 'Updated files are ready. Review the preview and ZIP again before continuing.';
-        this.isRefiningArtifacts = false;
-        this.cdr.markForCheck();
-      },
-      error: (error: unknown) => {
-        this.loadError = this.describeError(error, 'The generated files could not be revised.');
-        this.isRefiningArtifacts = false;
-        this.cdr.markForCheck();
-      },
-    });
   }
 
   runSecurityReview(): void {
@@ -476,17 +423,6 @@ get codeFiles(): string[] {
     });
   }
 
-  selectArtifact(path: string): void {
-    this.selectedArtifactPath = path;
-  }
-
-  private selectFirstArtifact(build: BuildState): void {
-    const files = build.proof?.files ?? [];
-    if (files.length && !files.includes(this.selectedArtifactPath)) {
-      this.selectedArtifactPath = files[0];
-    }
-  }
-
   private watchApprovalProgress(buildId: string): void {
     interval(1500)
       .pipe(
@@ -498,7 +434,6 @@ get codeFiles(): string[] {
       .subscribe({
         next: (updatedBuild) => {
           this.build = updatedBuild;
-          this.selectFirstArtifact(updatedBuild);
           if (updatedBuild.status !== 'Running') {
             this.approvingGate = null;
             this.loadError = updatedBuild.status === 'Failed'

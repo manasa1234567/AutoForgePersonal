@@ -123,7 +123,7 @@
                 @if (blueprint.openQuestions.length > 0) { <div class="reasoning"><h3>Open decisions</h3>@for (question of blueprint.openQuestions; track question) { <span>- {{ question }}</span> }</div> }
                 <div class="stage-footer">
                   <button class="secondary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
-                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint(true)">{{ approvingGate === 'blueprint' ? 'Approving blueprint…' : 'Save and Approve Blueprint →' }}</button>
+                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint(true)">{{ isSavingBlueprint ? 'Saving before approval…' : approvingGate === 'blueprint' ? 'Starting workflow…' : 'Save and Approve Blueprint →' }}</button>
                 </div>
               }
             </div>
@@ -135,40 +135,16 @@
               <p class="blueprint-edit-hint">Generated using the approved {{ currentBuild.blueprint?.frontend }} and {{ currentBuild.blueprint?.backend }} blueprint.</p>
               @if (artifactsZipUrl; as zipUrl) {
                 <div class="artifact-review-toolbar">
-                  <p>Review the generated files and UI concept before continuing to Critic review.</p>
+                  <p>{{ currentBuild.proof?.files?.length ?? 0 }} generated file(s) are ready to download. Approve the artifact set to continue to Critic review.</p>
                   <a class="primary-button" [href]="zipUrl" download>Download project ZIP</a>
                 </div>
               }
-              <section class="generated-preview" aria-label="Generated user interface preview">
-                <div class="preview-heading"><div><strong>UI preview</strong><span>Static, isolated visual concept generated from the approved use case</span></div></div>
-                @if (previewUrl; as preview) {
-                  <iframe [attr.src]="preview" sandbox="" title="Static preview of the generated user interface"></iframe>
-                } @else {
-                  <div class="preview-unavailable">No standalone UI preview was included. Review the source files below or download the ZIP.</div>
-                }
-              </section>
-              <div class="code-workspace">
-                <div class="file-tree">
-                  @for (file of codeFiles; track file) { <button class="file-row" type="button" [class.selected]="file === selectedArtifactPath" (click)="selectArtifact(file)">{{ file }}</button> }
-                </div>
-                <div class="code-editor"><div class="editor-tab">{{ selectedArtifactPath || 'Generated files' }}</div><pre><code>{{ generatedCode }}</code></pre></div>
-              </div>
-              @if (currentBuild.approvalGate === 'artifacts' && currentBuild.proof?.generatorMode === 'foundry-agent') {
-                <section class="artifact-feedback">
-                  <label for="artifact-feedback"><strong>Request a change</strong><span>Describe what you want changed. The Coder Agent will revise the project while keeping the approved requirements and blueprint.</span></label>
-                  <textarea id="artifact-feedback" rows="3" maxlength="5000" [value]="artifactFeedback" (input)="artifactFeedback = $any($event.target).value" placeholder="Example: Make the dashboard easier to use on mobile and add a clear account balance summary."></textarea>
-                  <div class="feedback-actions"><span>{{ artifactFeedback.length }}/5000</span><button class="secondary-button" type="button" [disabled]="isRefiningArtifacts || artifactFeedback.trim().length < 3" (click)="requestArtifactRevision()">{{ isRefiningArtifacts ? 'Updating project…' : 'Revise with AI feedback' }}</button></div>
-                </section>
-              } @else if (currentBuild.approvalGate === 'artifacts') {
-                <p class="blueprint-edit-hint">AI revisions need the Foundry Coder Agent. Download the ZIP to edit these files locally.</p>
-              }
-              @if (artifactMessage) { <p class="inline-success" role="status">{{ artifactMessage }}</p> }
               <div class="coder-activity"><span>Approved requirements received</span><span>Approved architecture received</span><span>{{ currentBuild.proof?.files?.length ?? 0 }} file(s) generated</span></div>
               @if (currentBuild.skillsUsed.length) { <div class="skill-usage"><strong>Skill recipes</strong>@for (skill of currentBuild.skillsUsed; track $index) { <span>{{ skill.id }} v{{ skill.version }} · {{ skill.usage }}{{ skill.reason ? ': ' + skill.reason : '' }}</span> }<a routerLink="/skills">Open Skill Registry →</a></div> }
               @if (currentBuild.skillProposal; as skill) { <div class="skill-banner"><div><span>NEW SKILL PROPOSED</span><strong>{{ skill.name }} {{ skill.version }}</strong><small>{{ skill.reason }}</small></div><a class="secondary-button" routerLink="/skills">Review Skill Registry &rarr;</a></div> }
               <p class="blueprint-edit-hint">Approval sends these artifacts to Critic review. It does not merge or deploy the project.</p>
               @if (currentBuild.approvalGate === 'artifacts') {
-                <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null || isRefiningArtifacts" (click)="approve('artifacts')">{{ approvingGate === 'artifacts' ? 'Continuing…' : 'Approve files and continue to review →' }}</button></div>
+                <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('artifacts')">{{ approvingGate === 'artifacts' ? 'Continuing…' : 'Approve files and continue to review →' }}</button></div>
               }
             </div>
           }

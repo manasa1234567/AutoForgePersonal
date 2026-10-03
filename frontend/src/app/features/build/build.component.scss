@@ -131,18 +131,3 @@
 .artifact-review-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; padding:10px 12px; border:1px solid #dfe5f0; border-radius:9px; background:#f8faff; }
 .artifact-review-toolbar p { margin:0; color:#62697a; font-size:10px; }
 .artifact-review-toolbar a { flex:none; text-decoration:none; }
-.generated-preview { margin:12px 0; overflow:hidden; border:1px solid #dfe3ed; border-radius:10px; background:#f7f8fb; }
-.preview-heading { padding:10px 12px; border-bottom:1px solid #e5e8ef; background:#fff; }
-.preview-heading div { display:flex; flex-direction:column; gap:3px; }
-.preview-heading strong { color:#343b4d; font-size:11px; }
-.preview-heading span,.preview-unavailable { color:#7c8392; font-size:9px; }
-.generated-preview iframe { display:block; width:100%; height:440px; border:0; background:#fff; }
-.preview-unavailable { padding:24px 14px; text-align:center; }
-@media (max-width: 680px) { .artifact-review-toolbar { align-items:flex-start; flex-direction:column; } .generated-preview iframe { height:360px; } }
-.artifact-feedback { display:grid; gap:8px; margin:12px 0; padding:12px; border:1px solid #e0e4ed; border-radius:9px; background:#fbfcff; }
-.artifact-feedback label { display:grid; gap:4px; }
-.artifact-feedback label strong { color:#343b4d; font-size:11px; }
-.artifact-feedback label span { color:#747b8a; font-size:9px; line-height:1.5; }
-.artifact-feedback textarea { width:100%; resize:vertical; padding:9px 10px; border:1px solid #d9deea; border-radius:7px; color:#30384a; font:inherit; font-size:10px; line-height:1.5; }
-.feedback-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.feedback-actions > span { color:#898f9d; font-size:8px; }

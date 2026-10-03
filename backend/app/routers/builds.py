@@ -1,10 +1,9 @@
 from io import BytesIO
-from html import escape, unescape
 import re
 import zipfile
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, RefineRequest
 from ..services.orchestrator import Orchestrator
@@ -80,35 +79,6 @@ async def download_artifacts(build_id: str):
     )
 
 
-@router.get("/{build_id}/preview", response_class=HTMLResponse)
-async def preview_artifacts(build_id: str):
-    try:
-        build = store.get(build_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Build not found") from exc
-    artifacts = build.proof.artifacts if build.proof else {}
-    preview = artifacts.get("preview/index.html")
-    body = re.search(r"<body\b[^>]*>(.*?)</body\s*>", preview or "", flags=re.IGNORECASE | re.DOTALL)
-    visible = re.sub(r"<(script|style|template)\b[^>]*>.*?</\1\s*>", " ", body.group(1) if body else "", flags=re.IGNORECASE | re.DOTALL)
-    visible = re.sub(r"<[^>]+>", " ", visible)
-    if not unescape(visible).strip():
-        requirement_items = "".join(
-            f"<li>{escape(item.text)}</li>" for item in build.requirements[:8]
-        ) or "<li>Review the approved application workflow.</li>"
-        preview = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(build.title)}</title><style>
-*{{box-sizing:border-box}}body{{margin:0;background:#f4f6fb;color:#20283a;font:16px/1.5 system-ui,sans-serif}}header{{padding:28px 7%;background:#172b4d;color:white}}main{{max-width:960px;margin:32px auto;padding:0 20px}}.label{{color:#6751c8;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}}section{{padding:24px;border:1px solid #e0e5ef;border-radius:14px;background:white}}li{{margin:12px 0}}
-</style></head><body><header><span>Application preview</span><h1>{escape(build.title)}</h1><p>Visual concept from the approved use case</p></header><main><section><strong class="label">Planned capabilities</strong><ul>{requirement_items}</ul></section></main></body></html>'''
-    return HTMLResponse(
-        preview,
-        headers={
-            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
-            "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "no-referrer",
-            "Cache-Control": "no-store",
-        },
-    )
-
-
 @router.post("/{build_id}/approve", status_code=202)
 async def approve_build(build_id: str, payload: ApprovalRequest):
     try:
@@ -135,16 +105,6 @@ async def refine_build(build_id: str, payload: RefineRequest):
         return await store.refine(build_id, payload.text)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/{build_id}/artifacts/refine")
-async def refine_artifacts(build_id: str, payload: RefineRequest):
-    try:
-        return await store.refine_artifacts(build_id, payload.text)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Build not found") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{build_id}/security-review")
