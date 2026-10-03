@@ -13,6 +13,7 @@ except ImportError:  # YAML review is optional for environments without PyYAML.
     yaml = None
 
 from ..models.schemas import Blueprint, CriticFinding, SkillRecipe
+from .artifact_limits import MAX_ARTIFACT_FILES, MAX_ARTIFACT_FILE_BYTES, MAX_ARTIFACT_TOTAL_BYTES
 from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .spec_agent import SpecAgent
 
@@ -155,13 +156,13 @@ class CriticAgent:
                     issue="Artifact path is absolute or contains an unsafe path segment.",
                     recommendation="Use a normalized relative path inside the generated project.",
                 ))
-        if len(artifacts) > 12:
+        if len(artifacts) > MAX_ARTIFACT_FILES:
             checks["artifact_count"] = "Failed"
             findings.append(CriticFinding(
                 severity="Critical",
                 file=None,
-                issue="Generated artifact count exceeds the 12-file review limit.",
-                recommendation="Reduce the generated project to at most 12 files before validation.",
+                issue=f"Generated artifact count exceeds the {MAX_ARTIFACT_FILES}-file review limit.",
+                recommendation=f"Reduce the generated project to at most {MAX_ARTIFACT_FILES} files before validation.",
             ))
         if not artifacts:
             findings.append(CriticFinding(
@@ -174,14 +175,14 @@ class CriticAgent:
             return findings, checks
 
         if (
-            sum(len(content) for content in artifacts.values()) > 100_000
-            or any(len(content) > 30_000 for content in artifacts.values())
+            sum(len(content.encode("utf-8")) for content in artifacts.values()) > MAX_ARTIFACT_TOTAL_BYTES
+            or any(len(content.encode("utf-8")) > MAX_ARTIFACT_FILE_BYTES for content in artifacts.values())
         ):
             findings.append(CriticFinding(
                 severity="Critical",
                 file=None,
                 issue="Generated source exceeds the per-file or combined review size limit.",
-                recommendation="Keep each file at or below 30,000 characters and the combined source at or below 100,000 characters.",
+                recommendation=f"Keep each file at or below {MAX_ARTIFACT_FILE_BYTES} UTF-8 bytes and the combined source at or below {MAX_ARTIFACT_TOTAL_BYTES} UTF-8 bytes.",
             ))
             checks["artifact_size"] = "Failed"
 

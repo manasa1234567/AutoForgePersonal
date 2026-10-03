@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from ..models.schemas import BuildState, DeploymentPlan
+from .artifact_limits import MAX_ARTIFACT_FILES, MAX_ARTIFACT_TOTAL_BYTES
 
 
 class DeployerAgent:
@@ -39,9 +40,9 @@ class DeployerAgent:
             if invalid_paths:
                 checks["artifact_paths"] = "Failed"
                 blockers.append("Generated file paths must be normalized and project-relative.")
-            elif len(artifacts) > 12 or total_bytes > 100_000:
+            elif len(artifacts) > MAX_ARTIFACT_FILES or total_bytes > MAX_ARTIFACT_TOTAL_BYTES:
                 checks["artifact_bounds"] = "Failed"
-                blockers.append("Artifacts exceed the configured 12-file or 100 KB packaging bound.")
+                blockers.append(f"Artifacts exceed the configured {MAX_ARTIFACT_FILES}-file or {MAX_ARTIFACT_TOTAL_BYTES // 1000} KB packaging bound.")
             else:
                 checks["artifact_paths"] = "Passed"
                 checks["artifact_bounds"] = "Passed"
