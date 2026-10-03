@@ -54,6 +54,31 @@
   margin-top: 14px;
 }
 
+/* Give the lower side agents their own row above Deployer and Critic. */
+.constellation {
+  height: 460px;
+}
+
+.node-left-bottom,
+.node-right-bottom {
+  bottom: 132px;
+}
+
+@media (max-width: 800px) {
+  .constellation {
+    height: 480px;
+  }
+
+  .node-left-bottom,
+  .node-right-bottom {
+    bottom: 142px;
+  }
+
+  .node-deployer {
+    bottom: 68px;
+  }
+}
+
 .analysis-grid > div {
   display: grid;
   gap: 7px;

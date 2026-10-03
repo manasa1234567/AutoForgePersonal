@@ -27,7 +27,6 @@
         <div class="constellation">
           <div class="orbit orbit-one"></div>
           <div class="orbit orbit-two"></div>
-          <div class="connector connector-a"></div><div class="connector connector-b"></div><div class="connector connector-c"></div>
           <div class="orchestrator"><b>A</b><strong>Orchestrator</strong><small>Microsoft Foundry</small></div>
           @for (node of agentNodes; track node.name) {
             <div class="agent-node" [class]="node.position" [class.running]="agentStatus(node.name) === 'Running'">
