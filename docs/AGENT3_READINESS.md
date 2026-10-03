@@ -8,7 +8,7 @@ The Coder Agent receives the requirement set approved by the user and the final 
 
 Configure the GitHub Actions repository variable `FOUNDRY_CODER_MODEL` with the exact deployment name. For an Agent 3-only trial, set it to the existing `gpt-4.1-mini` deployment and leave the shared `FOUNDRY_MODEL` unset. The CD workflow passes this value to the backend; push the updated workflow to `main` and run CD again after adding the variable. Keep the Foundry project endpoint and managed identity settings from `AGENT1_READINESS.md` configured.
 
-After requirements are approved and the Architecture Agent has produced a blueprint, review or edit the blueprint and select **Save and Approve Blueprint**. That approval invokes Agent 3. The output is limited to 24 relative-path text files, 30,000 UTF-8 bytes per file, and 100,000 UTF-8 bytes total. Unsafe paths and invalid outputs are rejected. A configured model failure stops the build visibly.
+After requirements are approved and the Architecture Agent has produced a blueprint, review or edit the blueprint and select **Save and Approve Blueprint**. That approval invokes Agent 3. The Coder Agent is asked to keep related code consolidated (aiming for 48 files or fewer); validation permits at most 128 relative-path text files, 30,000 UTF-8 bytes per file, and 100,000 UTF-8 bytes total. Unsafe paths and invalid outputs are rejected. A configured model failure stops the build visibly.
 
 After generation, the build pauses at a human artifact-review gate. The user can download all generated text files as a ZIP, then approve the artifact set to continue to Critic review. Generated code is not executed by this review gate. Changes to the downloaded ZIP are local and are not synchronized back into the build.
 
