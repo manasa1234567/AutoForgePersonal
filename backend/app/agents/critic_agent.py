@@ -280,9 +280,19 @@ class CriticAgent:
         skills: list[SkillRecipe],
     ) -> CriticResult:
         endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
-        model = os.getenv("FOUNDRY_CRITIC_MODEL") or os.getenv("FOUNDRY_MODEL", "")
+        # Prefer a dedicated critic deployment, then the shared deployment,
+        # and finally reuse the configured Coder deployment. This lets a
+        # single-model setup review generated artifacts without failing at
+        # the Critic gate solely because a separate variable is unset.
+        model = (
+            os.getenv("FOUNDRY_CRITIC_MODEL")
+            or os.getenv("FOUNDRY_MODEL")
+            or os.getenv("FOUNDRY_CODER_MODEL", "")
+        )
         if not model:
-            raise RuntimeError("FOUNDRY_CRITIC_MODEL (or FOUNDRY_MODEL) must name the Critic deployment")
+            raise RuntimeError(
+                "Set FOUNDRY_CRITIC_MODEL, FOUNDRY_MODEL, or FOUNDRY_CODER_MODEL to a Critic-capable deployment"
+            )
 
         try:
             from agent_framework import Agent
