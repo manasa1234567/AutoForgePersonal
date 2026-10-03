@@ -240,6 +240,18 @@
             <div class="stage-body"><div class="metrics-grid"><div><strong>{{ currentBuild.metrics.tokens | number }}</strong><span>Tokens Used</span></div><div><strong>{{ currentBuild.metrics.toolCalls }}</strong><span>Agent Tool Calls</span></div><div><strong>{{ currentBuild.metrics.selfHealIterations }}</strong><span>Self-Heal Iterations</span></div><div><strong>{{ currentBuild.metrics.successRate }}%</strong><span>Success Rate</span></div></div><div class="replay-list">@for (event of currentBuild.audit; track $index) { <div><time>{{ event.time }}</time><strong>{{ event.stage }}</strong><span>{{ event.message }}</span></div> }</div></div>
           }
 
+          @case ('Error') {
+            <div class="empty-stage" role="status">
+              <h3>Agent workflow stopped</h3>
+              <p>{{ currentBuild.error || loadError || 'The workflow stopped before it could finish.' }}</p>
+              @if (artifactsZipUrl; as zipUrl) {
+                <a class="primary-button" [href]="zipUrl" download>Download available project files</a>
+              } @else {
+                <p>No project ZIP is available because Agent 3 did not return generated files.</p>
+              }
+            </div>
+          }
+
           @default { <div class="empty-stage"><div class="spinner"></div><h3>Preparing your Forge…</h3><p>The Orchestrator is starting the governed agent workflow.</p></div> }
         }
       </section>

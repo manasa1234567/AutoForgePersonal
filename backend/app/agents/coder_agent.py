@@ -125,6 +125,13 @@ class CoderAgent:
                         ))
                         seen_skipped.add(skill_id)
             return CoderResult(files=files, mode="foundry-agent", skills_used=skills_used + skills_skipped)
+        except ValueError as exc:
+            # Keep the safe validation detail: otherwise empty or oversized
+            # model responses all look like an opaque Foundry request failure.
+            detail = str(exc).strip().replace("\n", " ")[:300]
+            raise RuntimeError(
+                f"Foundry Coder Agent returned invalid output: {detail or 'the response did not match the artifact schema'}"
+            ) from exc
         except Exception as exc:
             raise RuntimeError(f"Foundry Coder Agent request failed ({type(exc).__name__})") from exc
         finally:
