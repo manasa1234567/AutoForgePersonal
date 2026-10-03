@@ -354,7 +354,9 @@ get codeFiles(): string[] {
   }
 
   get previewUrl(): string | null {
-    return this.build?.proof?.artifacts?.['preview/index.html']
+    // The backend can build a requirements-based visual fallback when the
+    // Coder Agent omits the optional standalone preview file.
+    return this.build?.proof?.artifacts && Object.keys(this.build.proof.artifacts).length > 0
       ? `/api/builds/${encodeURIComponent(this.build.id)}/preview?rev=${this.build.audit.length}`
       : null;
   }
