@@ -45,3 +45,4 @@ Microsoft's documentation says custom containers provide the runtime and HTTP se
 ## Readiness
 
 **Status: static review and bounded repair-loop code implemented; ACA custom-session client and response contract implemented but disabled; custom runner and live runtime validation remain pending.** Agent 4 is not end-to-end verified or deployment-ready.
+
