@@ -50,6 +50,7 @@ async def health() -> dict[str, str]:
     return {
         "status": "ok",
         "mode": mode,
+        "persistence": "azure" if os.getenv("AUTOFORGE_PERSISTENCE", "local").strip().lower() == "azure" else "local",
         "service": "aegis-autoforge",
         "spec_agent": "configured" if cloud_model_configured else "misconfigured" if cloud_model_requested else "demo",
         "prompt_shields": "configured" if prompt_shields_configured else "missing" if cloud_model_requested else "local-marker-check",

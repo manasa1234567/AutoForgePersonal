@@ -50,6 +50,14 @@ jobs:
       AUTOFORGE_SANDBOX_ENDPOINT: ${{ vars.AUTOFORGE_SANDBOX_ENDPOINT }}
       AUTOFORGE_SANDBOX_ROUTE: ${{ vars.AUTOFORGE_SANDBOX_ROUTE || '/autoforge/validate' }}
       AUTOFORGE_SANDBOX_TIMEOUT_SECONDS: ${{ vars.AUTOFORGE_SANDBOX_TIMEOUT_SECONDS || '120' }}
+      AUTOFORGE_PERSISTENCE: ${{ vars.AUTOFORGE_PERSISTENCE || 'local' }}
+      AUTOFORGE_COSMOS_ENDPOINT: ${{ vars.AUTOFORGE_COSMOS_ENDPOINT }}
+      AUTOFORGE_COSMOS_DATABASE: ${{ vars.AUTOFORGE_COSMOS_DATABASE || 'autoforge' }}
+      AUTOFORGE_COSMOS_JOBS_CONTAINER: ${{ vars.AUTOFORGE_COSMOS_JOBS_CONTAINER || 'jobs' }}
+      AUTOFORGE_COSMOS_SKILLS_CONTAINER: ${{ vars.AUTOFORGE_COSMOS_SKILLS_CONTAINER || 'skills' }}
+      AUTOFORGE_BLOB_ACCOUNT_URL: ${{ vars.AUTOFORGE_BLOB_ACCOUNT_URL }}
+      AUTOFORGE_BLOB_SPECS_CONTAINER: ${{ vars.AUTOFORGE_BLOB_SPECS_CONTAINER || 'specs' }}
+      AUTOFORGE_BLOB_WORKSPACES_CONTAINER: ${{ vars.AUTOFORGE_BLOB_WORKSPACES_CONTAINER || 'workspaces' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +68,16 @@ jobs:
           if [[ "$AUTOFORGE_SANDBOX_ENABLED" == "true" && -z "$AUTOFORGE_SANDBOX_ENDPOINT" ]]; then
             echo "Set AUTOFORGE_SANDBOX_ENDPOINT when AUTOFORGE_SANDBOX_ENABLED=true."
             exit 1
+          fi
+          if [[ "$AUTOFORGE_PERSISTENCE" == "azure" ]]; then
+            if [[ -z "$AUTOFORGE_COSMOS_ENDPOINT" || -z "$AUTOFORGE_BLOB_ACCOUNT_URL" ]]; then
+              echo "Set AUTOFORGE_COSMOS_ENDPOINT and AUTOFORGE_BLOB_ACCOUNT_URL to enable durable Azure persistence."
+              exit 1
+            fi
+            if [[ -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" || -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+              echo "Set the backend managed identity resource and client IDs before enabling Azure persistence."
+              exit 1
+            fi
           fi
           if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" && -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_ARCHITECTURE_MODEL" && -z "$FOUNDRY_CODER_MODEL" && -z "$FOUNDRY_CRITIC_MODEL" && -z "$FOUNDRY_MODEL" && -z "$AZURE_CONTENT_SAFETY_ENDPOINT" && -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" && -z "$FOUNDRY_RUNTIME_CLIENT_ID" && "$AUTOFORGE_SANDBOX_ENABLED" != "true" ]]; then
             echo "Agent 1 Foundry settings are not configured; this deployment will use demo mode."
@@ -125,8 +143,22 @@ jobs:
           else
             echo "Foundry not configured; backend will retain its current settings (new installs use demo mode)."
           fi
+          if [[ "$AUTOFORGE_PERSISTENCE" == "azure" ]]; then
+            az containerapp identity assign -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --user-assigned "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID"
+            az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --set-env-vars AUTOFORGE_IDENTITY_MODE=managed_identity "AZURE_CLIENT_ID=$FOUNDRY_RUNTIME_CLIENT_ID"
+          fi
           az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
             --set-env-vars \
+              "AUTOFORGE_PERSISTENCE=$AUTOFORGE_PERSISTENCE" \
+              "AUTOFORGE_COSMOS_ENDPOINT=$AUTOFORGE_COSMOS_ENDPOINT" \
+              "AUTOFORGE_COSMOS_DATABASE=$AUTOFORGE_COSMOS_DATABASE" \
+              "AUTOFORGE_COSMOS_JOBS_CONTAINER=$AUTOFORGE_COSMOS_JOBS_CONTAINER" \
+              "AUTOFORGE_COSMOS_SKILLS_CONTAINER=$AUTOFORGE_COSMOS_SKILLS_CONTAINER" \
+              "AUTOFORGE_BLOB_ACCOUNT_URL=$AUTOFORGE_BLOB_ACCOUNT_URL" \
+              "AUTOFORGE_BLOB_SPECS_CONTAINER=$AUTOFORGE_BLOB_SPECS_CONTAINER" \
+              "AUTOFORGE_BLOB_WORKSPACES_CONTAINER=$AUTOFORGE_BLOB_WORKSPACES_CONTAINER" \
               "AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" \
               "AZURE_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" \
               "ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER" \

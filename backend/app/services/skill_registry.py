@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,7 +13,19 @@ class SkillRegistry:
     """Loads the markdown seed pack, governs lifecycle, and retrieves approved recipes."""
 
     def __init__(self, repository: SkillRepository | None = None) -> None:
-        self._repository = repository or InMemorySkillRepository(self._load_seed_pack())
+        if repository is not None:
+            self._repository = repository
+        elif os.getenv("AUTOFORGE_PERSISTENCE", "local").strip().lower() == "azure":
+            from ..repositories.azure_repositories import AzureSkillRepository
+
+            self._repository = AzureSkillRepository()
+            for recipe in self._load_seed_pack():
+                try:
+                    self._repository.get(recipe.id)
+                except KeyError:
+                    self._repository.save(recipe)
+        else:
+            self._repository = InMemorySkillRepository(self._load_seed_pack())
 
     @staticmethod
     def _load_seed_pack() -> list[SkillRecipe]:

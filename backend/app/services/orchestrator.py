@@ -19,7 +19,7 @@ from ..models.schemas import (
 )
 from .agent_service import AgentService
 from .azure_adapters import AzureAdapters
-from ..repositories.build_repository import BuildRepository, InMemoryBuildRepository
+from ..repositories.build_repository import BuildRepository, build_repository_from_environment
 from .skill_registry import skill_registry
 from .jira_client import JiraClient
 from .job_dispatcher import BuildJobDispatcher, InProcessBuildJobDispatcher
@@ -34,7 +34,7 @@ class Orchestrator:
         build_repository: BuildRepository | None = None,
         job_dispatcher: BuildJobDispatcher | None = None,
     ) -> None:
-        self._build_repository = build_repository or InMemoryBuildRepository()
+        self._build_repository = build_repository or build_repository_from_environment()
         self._azure = AzureAdapters()
         self._agent_service = AgentService()
         self._jira = JiraClient()
@@ -117,7 +117,7 @@ class Orchestrator:
         return build
 
     def list(self) -> list[BuildState]:
-        """Return current-process builds newest first (local demo storage only)."""
+        """Return persisted builds newest first."""
         return self._build_repository.list()
 
     async def start(self, build_id: str) -> BuildState:

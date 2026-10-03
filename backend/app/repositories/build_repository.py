@@ -32,3 +32,14 @@ class InMemoryBuildRepository:
 
     def list(self) -> list[BuildState]:
         return list(self._items.values())[::-1]
+
+
+def build_repository_from_environment() -> BuildRepository:
+    """Select durable Azure storage only when explicitly enabled."""
+    import os
+
+    if os.getenv("AUTOFORGE_PERSISTENCE", "local").strip().lower() == "azure":
+        from .azure_repositories import AzureBuildRepository
+
+        return AzureBuildRepository()
+    return InMemoryBuildRepository()

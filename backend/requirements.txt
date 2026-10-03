@@ -5,6 +5,8 @@ httpx==0.28.1
 agent-framework-foundry
 aiohttp
 azure-identity
+azure-cosmos
+azure-storage-blob
 PyYAML
 pypdf
 pytest==8.3.5
