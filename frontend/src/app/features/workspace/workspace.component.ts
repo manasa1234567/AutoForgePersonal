@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, OnIn
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ApiService } from '../../core/api.service';
+import { ApiService, DeploymentSetupStatus } from '../../core/api.service';
 import { AgentState, AuditEvent, BuildState, SkillRecipe } from '../../shared/models/build.models';
 
 type WorkspacePage = 'agents' | 'skills' | 'knowledge' | 'run-history' | 'settings';
@@ -55,6 +55,8 @@ export class WorkspaceComponent implements OnInit {
   query = '';
   workspaceName = localStorage.getItem('autoforge.workspaceName') || 'AutoForge';
   saved = false;
+  deploymentSetup: DeploymentSetupStatus | null = null;
+  deploymentSetupError = '';
   pendingSkillAction = '';
   private pendingLoads = this.requiredLoads;
 
@@ -69,6 +71,18 @@ export class WorkspaceComponent implements OnInit {
   };
 
   ngOnInit(): void {
+    if (this.page === 'settings') {
+      this.api.getDeploymentStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (status) => {
+          this.deploymentSetup = status;
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.deploymentSetupError = 'Deployment setup status is unavailable. Check that the backend is running.';
+          this.cdr.markForCheck();
+        },
+      });
+    }
     if (this.needsBuildData) {
       this.api.getBuilds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (builds) => {

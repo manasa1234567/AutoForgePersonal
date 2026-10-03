@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers.agents import router as agents_router
 from .routers.builds import router as builds_router
 from .routers.skills import router as skills_router
+from .routers.integrations import router as integrations_router
 
 app = FastAPI(title="AegisAI AutoForge API", version="1.0.0")
 
@@ -19,6 +20,7 @@ app.add_middleware(
 app.include_router(builds_router)
 app.include_router(agents_router)
 app.include_router(skills_router)
+app.include_router(integrations_router)
 
 
 @app.get("/api/health")

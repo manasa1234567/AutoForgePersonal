@@ -14,6 +14,10 @@ export class ApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = '/api';
 
+  getDeploymentStatus(): Observable<DeploymentSetupStatus> {
+    return this.http.get<DeploymentSetupStatus>(`${this.baseUrl}/integrations/deployment-status`);
+  }
+
   createBuild(request: BuildCreateRequest): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds`, request).pipe(timeout({ first: 30_000 }));
   }
@@ -57,4 +61,25 @@ export class ApiService {
   prepareDeployment(buildId: string): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/deployment-preflight`, {});
   }
+}
+
+export interface DeploymentSetupStatus {
+  status: 'configured' | 'setup_required';
+  github: {
+    repository: boolean;
+    app_identity: boolean;
+    contents_and_pull_requests: string;
+  };
+  azureContainerApps: {
+    subscription: boolean;
+    resource_group: boolean;
+    container_registry: boolean;
+    container_apps_environment: boolean;
+    managed_identity: boolean;
+    deployment_enabled: boolean;
+  };
+  validation: { isolated_validation: boolean };
+  branchPattern: string;
+  deploymentImplemented: boolean;
+  note: string;
 }
