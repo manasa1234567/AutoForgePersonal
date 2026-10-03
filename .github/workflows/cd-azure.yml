@@ -2,27 +2,32 @@ name: CD - Azure
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]              # force: deploy on every push to main
+  workflow_dispatch:              # manual button
+  # Safe mode (recommended later): delete the push block above and use this instead
+  # workflow_run:
+  #   workflows: ["CI"]
+  #   types: [completed]
+  #   branches: [main]
 
 permissions:
-  id-token: write
+  id-token: write                 # required for OIDC login
   contents: read
 
 env:
   REGISTRY: ${{ vars.ACR_NAME }}.azurecr.io
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 concurrency:
   group: cd-azure
-  cancel-in-progress: false
+  cancel-in-progress: false       # queue deploys, never cut one off midway
 
 jobs:
   deploy:
+    # Never skipped for push or manual runs; workflow_run needs a green CI
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: production
-
+    environment: production       # must match the federated credential subject
     env:
       FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
       FOUNDRY_SPEC_MODEL: ${{ vars.FOUNDRY_SPEC_MODEL }}
@@ -33,12 +38,35 @@ jobs:
       AZURE_PROMPT_SHIELDS_API_VERSION: ${{ vars.AZURE_PROMPT_SHIELDS_API_VERSION || '2024-09-01' }}
       FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID: ${{ vars.FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID }}
       FOUNDRY_RUNTIME_CLIENT_ID: ${{ vars.FOUNDRY_RUNTIME_CLIENT_ID }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Azure Login
+      - name: Validate Agent 1 cloud configuration
+        run: |
+          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" && -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_ARCHITECTURE_MODEL" && -z "$FOUNDRY_CODER_MODEL" && -z "$FOUNDRY_MODEL" && -z "$AZURE_CONTENT_SAFETY_ENDPOINT" && -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" && -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+            echo "Agent 1 Foundry settings are not configured; this deployment will use demo mode."
+            exit 0
+          fi
+          if [[ -z "$FOUNDRY_PROJECT_ENDPOINT" ]]; then
+            echo "Set FOUNDRY_PROJECT_ENDPOINT to enable the Foundry Spec Agent."
+            exit 1
+          fi
+          if [[ -z "$FOUNDRY_SPEC_MODEL" && -z "$FOUNDRY_MODEL" ]]; then
+            echo "Set FOUNDRY_SPEC_MODEL or FOUNDRY_MODEL in GitHub Actions variables."
+            exit 1
+          fi
+          if [[ -z "$AZURE_CONTENT_SAFETY_ENDPOINT" ]]; then
+            echo "Set AZURE_CONTENT_SAFETY_ENDPOINT before enabling the Foundry Spec Agent."
+            exit 1
+          fi
+          if [[ -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" || -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+            echo "Set FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID and FOUNDRY_RUNTIME_CLIENT_ID for the ACA workload identity."
+            exit 1
+          fi
+
+      - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -46,150 +74,66 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Login to ACR
-        run: |
-          az acr login --name ${{ vars.ACR_NAME }}
+        run: az acr login --name ${{ vars.ACR_NAME }}
 
-      - name: Build Backend Image
+      - name: Build and push images
         run: |
-          docker build \
-            -t $REGISTRY/aegis-backend:$IMAGE_TAG \
-            ./backend
-
-      - name: Build Frontend Image
-        run: |
-          docker build \
-            -f frontend/Dockerfile \
-            -t $REGISTRY/aegis-frontend:$IMAGE_TAG \
-            .
-
-      - name: Push Images
-        run: |
+          docker build -t $REGISTRY/aegis-backend:$IMAGE_TAG ./backend
+          docker build -f frontend/Dockerfile -t $REGISTRY/aegis-frontend:$IMAGE_TAG .
           docker push $REGISTRY/aegis-backend:$IMAGE_TAG
           docker push $REGISTRY/aegis-frontend:$IMAGE_TAG
 
-      - name: Configure Backend Identity
-        if: env.FOUNDRY_PROJECT_ENDPOINT != ''
+      - name: Deploy backend
         run: |
-          az containerapp identity assign \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --user-assigned "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID"
-
-      - name: Configure Backend Environment Variables
-        if: env.FOUNDRY_PROJECT_ENDPOINT != ''
-        run: |
-          az containerapp update \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --set-env-vars \
-            FOUNDRY_PROJECT_ENDPOINT="$FOUNDRY_PROJECT_ENDPOINT" \
-            FOUNDRY_SPEC_MODEL="$FOUNDRY_SPEC_MODEL" \
-            FOUNDRY_ARCHITECTURE_MODEL="$FOUNDRY_ARCHITECTURE_MODEL" \
-            FOUNDRY_CODER_MODEL="$FOUNDRY_CODER_MODEL" \
-            FOUNDRY_MODEL="$FOUNDRY_MODEL" \
-            AZURE_CONTENT_SAFETY_ENDPOINT="$AZURE_CONTENT_SAFETY_ENDPOINT" \
-            AZURE_PROMPT_SHIELDS_API_VERSION="$AZURE_PROMPT_SHIELDS_API_VERSION" \
-            AUTOFORGE_IDENTITY_MODE=managed_identity \
-            AZURE_CLIENT_ID="$FOUNDRY_RUNTIME_CLIENT_ID"
-
-      - name: Deploy Backend
-        run: |
-          az containerapp ingress update \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --target-port 8000 \
-            --transport http
-
-          az containerapp update \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
+          az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-backend \
+            --target-port 8000 --transport http
+          if [[ -n "$FOUNDRY_PROJECT_ENDPOINT" ]]; then
+            az containerapp identity assign -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --user-assigned "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID"
+            az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --set-env-vars \
+                "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_PROJECT_ENDPOINT" \
+                "FOUNDRY_SPEC_MODEL=$FOUNDRY_SPEC_MODEL" \
+                "FOUNDRY_ARCHITECTURE_MODEL=$FOUNDRY_ARCHITECTURE_MODEL" \
+                "FOUNDRY_CODER_MODEL=$FOUNDRY_CODER_MODEL" \
+                "FOUNDRY_MODEL=$FOUNDRY_MODEL" \
+                "AZURE_CONTENT_SAFETY_ENDPOINT=$AZURE_CONTENT_SAFETY_ENDPOINT" \
+                "AZURE_PROMPT_SHIELDS_API_VERSION=$AZURE_PROMPT_SHIELDS_API_VERSION" \
+                AUTOFORGE_IDENTITY_MODE=managed_identity \
+                "AZURE_CLIENT_ID=$FOUNDRY_RUNTIME_CLIENT_ID"
+          else
+            echo "Foundry not configured; backend will retain its current settings (new installs use demo mode)."
+          fi
+          az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --image $REGISTRY/aegis-backend:$IMAGE_TAG
 
-      - name: Get Backend URL
-        id: backend
+      - name: Deploy frontend
         run: |
-          BACKEND_FQDN=$(az containerapp show \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --query properties.configuration.ingress.fqdn \
-            -o tsv)
-
-          echo "backend_fqdn=$BACKEND_FQDN" >> $GITHUB_OUTPUT
-
-      - name: Deploy Frontend
-        run: |
-          az containerapp ingress update \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-frontend \
-            --target-port 80 \
-            --transport http
-
-          az containerapp update \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-frontend \
+          az containerapp ingress update -g ${{ vars.AZURE_RG }} -n aegis-frontend \
+            --target-port 80 --transport http
+          BACKEND_FQDN=$(az containerapp show -g ${{ vars.AZURE_RG }} -n aegis-backend \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-frontend \
             --image $REGISTRY/aegis-frontend:$IMAGE_TAG \
-            --set-env-vars BACKEND_URL=https://${{ steps.backend.outputs.backend_fqdn }}
+            --set-env-vars BACKEND_URL=https://$BACKEND_FQDN
 
-      - name: Smoke Test
+      - name: Smoke test
         run: |
-          FRONTEND_FQDN=$(az containerapp show \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-frontend \
-            --query properties.configuration.ingress.fqdn \
-            -o tsv)
-
-          BACKEND_FQDN=$(az containerapp show \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --query properties.configuration.ingress.fqdn \
-            -o tsv)
-
-          echo "Frontend URL: https://$FRONTEND_FQDN"
-          echo "Backend URL : https://$BACKEND_FQDN"
-
-          for i in {1..12}
-          do
-            FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://$FRONTEND_FQDN/)
-
-            BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://$BACKEND_FQDN/api/health)
-
-            echo "Attempt $i"
-            echo "Frontend: $FRONTEND_STATUS"
-            echo "Backend : $BACKEND_STATUS"
-
-            if [[ "$FRONTEND_STATUS" == "200" && "$BACKEND_STATUS" == "200" ]]; then
-              echo "Deployment successful"
+          URL=$(az containerapp show -g ${{ vars.AZURE_RG }} -n aegis-frontend \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "App URL: https://$URL"
+          for i in 1 2 3 4 5 6; do
+            FRONTEND_STATUS=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "https://$URL/")
+            API_STATUS=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "https://$URL/api/health")
+            echo "Attempt $i: frontend=$FRONTEND_STATUS api-health=$API_STATUS"
+            if [ "$FRONTEND_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
+              echo "Frontend and API health checks passed"
               exit 0
             fi
-
-            sleep 15
+            if [ "$i" = "6" ]; then
+              echo "Final API response headers:"
+              curl -sS --max-time 15 -D - -o /dev/null "https://$URL/api/health" || true
+            fi
+            sleep 10
           done
-
-          echo "Smoke test failed"
           exit 1
-
-      - name: Backend Diagnostics
-        if: failure()
-        run: |
-          echo "=== Backend Revisions ==="
-          az containerapp revision list \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            -o table
-
-          echo "=== Backend Status ==="
-          az containerapp show \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-backend \
-            --query properties.runningStatus
-
-      - name: Frontend Diagnostics
-        if: failure()
-        run: |
-          echo "=== Frontend Revisions ==="
-          az containerapp revision list \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --name aegis-frontend \
-            -o table
