@@ -441,13 +441,14 @@ class Orchestrator:
         self._build_repository.save(build)
         recipes = skill_registry.retrieve(agent="Coder Agent", query=self._skill_query(build), limit=5)
         try:
+            previous_artifacts = dict(build.proof.artifacts)
             result = await self._agent_service.run_coder_agent(
                 title=build.title,
                 blueprint=build.blueprint,
                 requirements=build.requirements,
                 acceptance_criteria=build.acceptance_criteria,
                 skills=recipes,
-                previous_artifacts=build.proof.artifacts,
+                previous_artifacts=previous_artifacts,
                 repair_findings=[{
                     "severity": "Human review feedback",
                     "issue": feedback.strip(),
@@ -461,8 +462,12 @@ class Orchestrator:
             self._build_repository.save(build)
             raise
 
-        build.proof.files = list(result.files)
-        build.proof.artifacts = result.files
+        # The model may return only the files it changed despite being asked for
+        # a complete project. Overlay its revisions on the current artifact map
+        # so folders and files it did not touch remain in the downloadable ZIP.
+        revised_artifacts = {**previous_artifacts, **result.files}
+        build.proof.files = list(revised_artifacts)
+        build.proof.artifacts = revised_artifacts
         build.proof.generator_mode = result.mode
         build.skills_used.extend(result.skills_used)
         build.metrics.tokens += result.tokens
