@@ -117,14 +117,19 @@
                   </div>
                   <label class="blueprint-deployment"><b>Deployment / ANY TARGET</b><input aria-label="Deployment target; enter any cloud or hosting platform" placeholder="Azure, AWS, Kubernetes, Vercel, or any target" [value]="blueprintDraft?.deployment ?? blueprint.deployment" (input)="updateBlueprintField('deployment', $event)"></label>
                 </div>
-                <label class="blueprint-security"><strong>Security controls / ANY REQUIREMENTS</strong><textarea rows="3" placeholder="Enter the controls or security approach you want" [value]="blueprintSecurityDraft" (input)="blueprintSecurityDraft = $any($event.target).value" aria-label="Security controls, one per line"></textarea><small>Enter one control per line. Leave empty if you want the agent to recommend controls.</small></label>
+                <label class="blueprint-security"><strong>Security controls / ANY REQUIREMENTS</strong><textarea rows="3" placeholder="Enter the controls or security approach you want" [value]="blueprintSecurityDraft" (input)="blueprintSecurityDraft = $any($event.target).value; blueprintMessage = null" aria-label="Security controls, one per line"></textarea><small>Enter one control per line. Leave empty if you want the agent to recommend controls.</small></label>
                 <div class="reasoning"><h3>Design rationale</h3>@for (reason of blueprint.reasoning; track reason) { <span>- {{ reason }}</span> }</div>
                 @if (blueprint.assumptions.length > 0) { <div class="reasoning"><h3>Assumptions</h3>@for (assumption of blueprint.assumptions; track assumption) { <span>- {{ assumption }}</span> }</div> }
                 @if (blueprint.openQuestions.length > 0) { <div class="reasoning"><h3>Open decisions</h3>@for (question of blueprint.openQuestions; track question) { <span>- {{ question }}</span> }</div> }
-                <div class="stage-footer">
-                  <button class="secondary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
-                  <button class="primary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint(true)">{{ isSavingBlueprint ? 'Saving before approval…' : approvingGate === 'blueprint' ? 'Starting workflow…' : 'Save and Approve Blueprint →' }}</button>
-                </div>
+                @if (currentBuild.approvalGate === 'blueprint') {
+                  <div class="stage-footer">
+                    <button class="secondary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint()">{{ isSavingBlueprint ? 'Saving...' : 'Save choices' }}</button>
+                    <button class="primary-button" type="button" [disabled]="isSavingBlueprint || approvingGate !== null" (click)="saveBlueprint(true)">{{ isSavingBlueprint ? 'Saving before approval…' : approvingGate === 'blueprint' ? 'Starting workflow…' : 'Save and Approve Blueprint →' }}</button>
+                  </div>
+                  @if (blueprintMessage) { <p class="inline-success" role="status" aria-live="polite">{{ blueprintMessage }}</p> }
+                } @else if (currentBuild.status === 'Running') {
+                  <p class="inline-success" role="status">Blueprint approval is processing. The workspace will advance when Agent 3 is ready.</p>
+                }
               }
             </div>
           }

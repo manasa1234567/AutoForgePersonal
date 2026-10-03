@@ -53,6 +53,7 @@ export class BuildComponent implements OnInit {
   blueprintDraft: BlueprintUpdate | null = null;
 
   blueprintSecurityDraft = '';
+  blueprintMessage: string | null = null;
 
   isSavingBlueprint = false;
   approvingGate: Exclude<ApprovalGate, null> | null = null;
@@ -457,6 +458,7 @@ export class BuildComponent implements OnInit {
 
     if (!this.blueprintDraft || !(target instanceof HTMLInputElement)) return;
 
+    this.blueprintMessage = null;
     this.blueprintDraft = { ...this.blueprintDraft, [field]: target.value };
 
   }
@@ -465,17 +467,39 @@ export class BuildComponent implements OnInit {
 
   saveBlueprint(approveAfterSave = false): void {
 
-    if (!this.build || !this.blueprintDraft || this.isSavingBlueprint || this.approvingGate) return;
+    if (!this.build || this.isSavingBlueprint || this.approvingGate) return;
+
+    const draft = this.blueprintDraft ?? (this.build.blueprint ? this.toBlueprintUpdate(this.build.blueprint) : null);
+    if (!draft) {
+      this.loadError = 'The solution blueprint is still loading. Refresh the workspace and try again.';
+      this.cdr.markForCheck();
+      return;
+    }
 
     const request: BlueprintUpdate = {
 
-      ...this.blueprintDraft,
+      ...draft,
 
       security: this.blueprintSecurityDraft.split('\n').map((item) => item.trim()).filter(Boolean),
 
     };
 
+    const unchanged = this.build.blueprint &&
+      JSON.stringify(request) === JSON.stringify(this.toBlueprintUpdate(this.build.blueprint));
+
+    // Avoid model/HTTP work if a save request would not change anything.
+    if (unchanged) {
+      if (approveAfterSave) this.approve('blueprint');
+      else {
+        this.blueprintMessage = 'These blueprint choices are already saved.';
+        this.cdr.markForCheck();
+      }
+      return;
+    }
+
     this.isSavingBlueprint = true;
+    this.blueprintMessage = approveAfterSave ? 'Saving choices before approval…' : 'Saving blueprint choices…';
+    this.loadError = null;
 
     this.api.updateBlueprint(this.build.id, request).subscribe({
 
@@ -488,6 +512,9 @@ export class BuildComponent implements OnInit {
         this.blueprintSecurityDraft = build.blueprint!.security.join('\n');
 
         this.isSavingBlueprint = false;
+        this.blueprintMessage = approveAfterSave
+          ? 'Blueprint saved. Starting Agent 3…'
+          : 'Blueprint choices saved.';
 
         this.cdr.markForCheck();
 
@@ -498,6 +525,7 @@ export class BuildComponent implements OnInit {
       error: (error: unknown) => {
 
         this.isSavingBlueprint = false;
+        this.blueprintMessage = null;
 
         this.loadError = this.describeError(error, 'Unable to save blueprint choices.');
 
