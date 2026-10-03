@@ -51,6 +51,13 @@
         @if (currentBuild.status === 'Blocked') {
           <div class="build-error" role="status"><strong>Validation is blocked</strong><span>{{ currentBuild.error }}</span></div>
         }
+        @if (currentBuild.status === 'Running' && currentBuild.stage !== 'Understand') {
+          <div class="analysis-loading approval-progress" role="status" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <h3>Approval received — workflow is in progress</h3>
+            <p>The active agent is working. This page will update when the current step is ready.</p>
+          </div>
+        }
 
         <div class="stage-header">
           <div><span class="panel-kicker">STEP {{ stageIndex + 1 }} OF 5</span><h2>{{ stageTitle }}</h2><p>{{ stageSubtitle }}</p></div>

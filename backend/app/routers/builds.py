@@ -109,7 +109,7 @@ async def preview_artifacts(build_id: str):
     )
 
 
-@router.post("/{build_id}/approve")
+@router.post("/{build_id}/approve", status_code=202)
 async def approve_build(build_id: str, payload: ApprovalRequest):
     try:
         return await store.approve(build_id, payload.gate)

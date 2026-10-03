@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -38,6 +39,7 @@ class Orchestrator:
         self._agent_service = AgentService()
         self._jira = JiraClient()
         self._job_dispatcher = job_dispatcher or InProcessBuildJobDispatcher(self._run_until_gate)
+        self._approval_tasks: dict[str, asyncio.Task[None]] = {}
 
     @staticmethod
     def _time() -> str:
@@ -608,50 +610,72 @@ class Orchestrator:
         build = self.get(build_id)
         if build.approval_gate != gate:
             raise ValueError(f"Approval gate '{gate}' is not active")
+        if gate == "skill" and not build.skill_proposal:
+            raise ValueError("There is no generated skill proposal pending approval for this build")
+
         self._add_event(build, "Approval", f"Human approved {gate}", "User", metadata={"gate": gate})
         build.approval_gate = None
+        build.status = "Running"
+        owner, detail = {
+            "requirements": ("Architecture Agent", "Designing the approved requirements"),
+            "blueprint": ("Coder Agent", "Generating the approved application"),
+            "artifacts": ("Critic Agent", "Reviewing generated artifacts"),
+            "skill": ("Security Reviewer", "Running security checks after skill approval"),
+            "release": ("Deployer Agent", "Processing the approved release"),
+        }[gate]
+        self._set_agent(build, owner, "Running", detail)
+        self._build_repository.save(build)
+
+        # Return the persisted Running state immediately. Agent calls can exceed
+        # HTTP gateway limits, so their completion must not hold the approval request open.
+        task = asyncio.create_task(self._complete_approval(build_id, gate))
+        self._approval_tasks[build_id] = task
+        task.add_done_callback(lambda _task, key=build_id: self._approval_tasks.pop(key, None))
+        return build
+
+    async def _complete_approval(self, build_id: str, gate: str) -> None:
+        build = self.get(build_id)
 
         if gate == "requirements":
-            build.status = "Running"
             try:
                 await self._design(build)
             except Exception as exc:
                 self._fail(build, str(exc))
                 self._build_repository.save(build)
-                return build
+                return
             build.approval_gate = "blueprint"
             build.stage = "Design"
             build.status = "Awaiting Approval"
             build.progress = 38
         elif gate == "blueprint":
-            build.status = "Running"
             try:
                 await self._forge(build)
             except Exception as exc:
                 self._fail(build, str(exc))
                 self._build_repository.save(build)
-                return build
+                return
         elif gate == "artifacts":
-            build.status = "Running"
             try:
                 await self._prove(build)
             except Exception as exc:
                 self._fail(build, str(exc))
                 self._build_repository.save(build)
-                return build
+                return
         elif gate == "skill":
-            if not build.skill_proposal:
-                raise ValueError("There is no generated skill proposal pending approval for this build")
+            assert build.skill_proposal is not None
             build.skill_proposal.status = "Approved"
             self._set_agent(build, "Skill Agent", "Ready", "Skill version approved and promoted")
             self._add_event(build, "Skills", f"{build.skill_proposal.name} {build.skill_proposal.version} promoted after human approval", "Skill Agent")
-            build.status = "Running"
-            await self._security(build)
+            try:
+                await self._security(build)
+            except Exception as exc:
+                self._fail(build, str(exc))
         elif gate == "release":
-            build.status = "Running"
-            await self._deploy(build)
+            try:
+                await self._deploy(build)
+            except Exception as exc:
+                self._fail(build, str(exc))
         self._build_repository.save(build)
-        return build
 
     def update_blueprint(self, build_id: str, payload: BlueprintUpdate) -> BuildState:
         build = self.get(build_id)

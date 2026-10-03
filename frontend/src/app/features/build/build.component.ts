@@ -336,6 +336,10 @@ get codeFiles(): string[] {
           this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
           this.blueprintSecurityDraft = build.blueprint.security.join('\n');
         }
+        if (build.status === 'Running') {
+          this.approvingGate = gate;
+          this.watchApprovalProgress(build.id);
+        }
         this.cdr.markForCheck();
       },
       error: (error: unknown) => {
@@ -354,31 +358,7 @@ get codeFiles(): string[] {
             this.approvingGate = latestBuild.status === 'Running' ? gate : null;
             this.cdr.markForCheck();
 
-            if (latestBuild.status === 'Running') {
-              interval(1500)
-                .pipe(
-                  startWith(0),
-                  switchMap(() => this.api.getBuild(latestBuild.id)),
-                  takeWhile((updatedBuild) => updatedBuild.status === 'Running', true),
-                  takeUntilDestroyed(this.destroyRef),
-                )
-                .subscribe({
-                  next: (updatedBuild) => {
-                    this.build = updatedBuild;
-                    this.selectFirstArtifact(updatedBuild);
-                    if (updatedBuild.status !== 'Running') {
-                      this.approvingGate = null;
-                      this.loadError = null;
-                    }
-                    this.cdr.markForCheck();
-                  },
-                  error: (refreshError: unknown) => {
-                    this.approvingGate = null;
-                    this.loadError = this.describeError(refreshError, 'Unable to refresh the approval status.');
-                    this.cdr.markForCheck();
-                  },
-                });
-            }
+            if (latestBuild.status === 'Running') this.watchApprovalProgress(latestBuild.id);
           },
           error: (refreshError: unknown) => {
             this.approvingGate = null;
@@ -505,6 +485,34 @@ get codeFiles(): string[] {
     if (files.length && !files.includes(this.selectedArtifactPath)) {
       this.selectedArtifactPath = files[0];
     }
+  }
+
+  private watchApprovalProgress(buildId: string): void {
+    interval(1500)
+      .pipe(
+        startWith(0),
+        switchMap(() => this.api.getBuild(buildId)),
+        takeWhile((updatedBuild) => updatedBuild.status === 'Running', true),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: (updatedBuild) => {
+          this.build = updatedBuild;
+          this.selectFirstArtifact(updatedBuild);
+          if (updatedBuild.status !== 'Running') {
+            this.approvingGate = null;
+            this.loadError = updatedBuild.status === 'Failed'
+              ? updatedBuild.error ?? 'The approved workflow failed. Review the build timeline for details.'
+              : null;
+          }
+          this.cdr.markForCheck();
+        },
+        error: (refreshError: unknown) => {
+          this.approvingGate = null;
+          this.loadError = this.describeError(refreshError, 'Unable to refresh the approval status.');
+          this.cdr.markForCheck();
+        },
+      });
   }
 
 
