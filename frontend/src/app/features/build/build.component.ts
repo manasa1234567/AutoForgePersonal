@@ -340,9 +340,52 @@ get codeFiles(): string[] {
       },
       error: (error: unknown) => {
         console.error('Approval failed', error);
-        this.approvingGate = null;
-        this.loadError = this.describeError(error, 'Approval failed.');
-        this.cdr.markForCheck();
+        // Approval can outlast the gateway's HTTP timeout while the backend
+        // continues generating code. Reload the persisted build before
+        // offering the user a retry, then follow it until the operation ends.
+        this.api.getBuild(this.build!.id).subscribe({
+          next: (latestBuild) => {
+            this.build = latestBuild;
+            this.selectFirstArtifact(latestBuild);
+            const gateChanged = latestBuild.approvalGate !== gate;
+            this.loadError = gateChanged
+              ? `The ${gate} approval request was accepted, but the response timed out. The workspace state has been refreshed.`
+              : this.describeError(error, 'Approval failed.');
+            this.approvingGate = latestBuild.status === 'Running' ? gate : null;
+            this.cdr.markForCheck();
+
+            if (latestBuild.status === 'Running') {
+              interval(1500)
+                .pipe(
+                  startWith(0),
+                  switchMap(() => this.api.getBuild(latestBuild.id)),
+                  takeWhile((updatedBuild) => updatedBuild.status === 'Running', true),
+                  takeUntilDestroyed(this.destroyRef),
+                )
+                .subscribe({
+                  next: (updatedBuild) => {
+                    this.build = updatedBuild;
+                    this.selectFirstArtifact(updatedBuild);
+                    if (updatedBuild.status !== 'Running') {
+                      this.approvingGate = null;
+                      this.loadError = null;
+                    }
+                    this.cdr.markForCheck();
+                  },
+                  error: (refreshError: unknown) => {
+                    this.approvingGate = null;
+                    this.loadError = this.describeError(refreshError, 'Unable to refresh the approval status.');
+                    this.cdr.markForCheck();
+                  },
+                });
+            }
+          },
+          error: (refreshError: unknown) => {
+            this.approvingGate = null;
+            this.loadError = this.describeError(refreshError, 'Approval response timed out and workspace status could not be refreshed.');
+            this.cdr.markForCheck();
+          },
+        });
       },
     });
   }
