@@ -18,6 +18,8 @@ The application side is ready to configure with:
 - `AUTOFORGE_SANDBOX_TIMEOUT_SECONDS` from 5 to 600; default `120`.
 - The existing approved identity settings, with `Azure ContainerApps Session Executor` on the session pool. Managed identity uses `AUTOFORGE_IDENTITY_MODE=managed_identity` and the configured `AZURE_CLIENT_ID` when applicable.
 
+For Azure Container Apps deployments, the CD workflow must forward these four sandbox settings into the backend container. GitHub Actions repository variables alone do not update the running container. The workflow now forwards them and rejects `AUTOFORGE_SANDBOX_ENABLED=true` when the endpoint is missing. Keep the flag `false` until the compatible runner image and session pool are deployed.
+
 ### Required custom-container runner contract
 
 The session container still needs to implement the configured route. ACA forwards requests to the custom container and provisions a session based on the `identifier` query parameter. The runner receives JSON with `contractVersion: "1"`, title, approved blueprint, approved requirements, acceptance criteria, generated artifacts (relative path to text content), and the backend's timeout limit. It must return JSON with:
