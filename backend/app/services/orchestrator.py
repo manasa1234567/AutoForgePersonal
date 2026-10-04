@@ -940,7 +940,14 @@ class Orchestrator:
 
         self._build_repository.save(build)
 
-        review = await self.run_security_review(build.id)
+        build_id = build.id
+        review = await self.run_security_review(build_id)
+        # run_security_review loads and persists its own BuildState snapshot.
+        # Refresh here before saving the POC gate result, otherwise this older
+        # object can overwrite the saved SecurityReview (especially with the
+        # snapshot-based Azure repository) and make _deploy reject an approved
+        # release because it sees security_review=None.
+        build = self.get(build_id)
 
         # --------------------------------------------------------
         # POC RELEASE POLICY
