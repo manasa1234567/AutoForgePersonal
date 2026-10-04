@@ -373,6 +373,7 @@ class Orchestrator:
         build.clarification_questions = (
             result.clarification_questions
         )
+
         build.spec_confidence = result.confidence
         build.spec_readiness = result.readiness
         build.agent_mode = result.mode
@@ -1126,67 +1127,128 @@ class Orchestrator:
 
         return review
 
+    # ============================================================
+    # POC DEPLOYMENT
+    # ============================================================
+
     async def _deploy(self, build: BuildState) -> None:
-        plan = await self.prepare_deployment(build.id)
+        """
+        POC deployment handler.
 
-        build.approval_gate = None
+        For the POC we do not perform a real Azure deployment.
+        We only verify that generated artifacts exist and
+        mark the deployment as simulated.
+        """
 
-        if plan.status != "ready":
+        build.stage = "Release"
+        build.progress = 95
+
+        self._set_agent(
+            build,
+            "Deployer Agent",
+            "Running",
+            "Preparing POC deployment",
+        )
+
+        self._build_repository.save(build)
+
+        # --------------------------------------------------------
+        # Validate generated artifacts
+        # --------------------------------------------------------
+
+        if build.proof is None:
             build.status = "Blocked"
-            build.stage = "Release"
-
             build.error = (
-                "Deployment was blocked by the Deployer Agent "
-                "preflight. Review the blockers before retrying."
+                "POC deployment cannot continue because "
+                "generated artifacts are missing."
             )
 
             self._set_agent(
                 build,
                 "Deployer Agent",
                 "Blocked",
-                plan.summary,
+                build.error,
             )
 
             self._add_event(
                 build,
                 "Deploy",
-                "Deployment was not started because "
-                "preflight checks are incomplete",
+                build.error,
                 "Deployer Agent",
-                severity="warning",
-                metadata={
-                    "blockers": plan.blockers,
-                },
+                severity="error",
             )
 
             self._build_repository.save(build)
             return
 
-        # This code path remains disabled until a reviewed
-        # Azure deployment adapter is installed.
+        if not build.proof.artifacts:
+            build.status = "Blocked"
+            build.error = (
+                "POC deployment cannot continue because "
+                "no generated artifacts were found."
+            )
 
-        build.status = "Blocked"
-        build.stage = "Release"
+            self._set_agent(
+                build,
+                "Deployer Agent",
+                "Blocked",
+                build.error,
+            )
 
-        build.error = (
-            "The Azure deployment adapter is not implemented; "
-            "no deployment was started."
-        )
+            self._add_event(
+                build,
+                "Deploy",
+                build.error,
+                "Deployer Agent",
+                severity="error",
+            )
+
+            self._build_repository.save(build)
+            return
+
+        artifact_count = len(build.proof.artifacts)
+
+        # --------------------------------------------------------
+        # POC deployment plan
+        # --------------------------------------------------------
+
+        plan = await self.prepare_deployment(build.id)
+
+        build.deployment_plan = plan
+
+        # --------------------------------------------------------
+        # Simulated deployment
+        # --------------------------------------------------------
 
         self._set_agent(
             build,
             "Deployer Agent",
-            "Blocked",
-            build.error,
+            "Ready",
+            "POC deployment completed successfully "
+            f"with {artifact_count} artifact(s)",
         )
 
         self._add_event(
             build,
             "Deploy",
-            build.error,
+            "POC deployment completed successfully. "
+            "No real Azure deployment was performed.",
             "Deployer Agent",
-            severity="warning",
+            severity="info",
+            metadata={
+                "mode": "poc",
+                "deployment": "simulated",
+                "target": plan.target,
+                "artifacts": artifact_count,
+                "files": plan.artifact_manifest,
+            },
         )
+
+        build.status = "Completed"
+        build.stage = "Release"
+        build.approval_gate = None
+        build.progress = 100
+        build.error = None
 
         self._build_repository.save(build)
 
@@ -1194,7 +1256,12 @@ class Orchestrator:
         self,
         build_id: str,
     ) -> DeploymentPlan:
-        """Run a local deployment preflight and save its artifact manifest."""
+        """
+        Prepare a simple deployment plan for the POC.
+
+        No real Azure deployment or enterprise preflight checks
+        are required at this stage.
+        """
 
         build = self.get(build_id)
 
@@ -1202,13 +1269,27 @@ class Orchestrator:
             build,
             "Deployer Agent",
             "Running",
-            "Preparing deployment manifest and checking gates",
+            "Preparing POC deployment plan",
         )
 
         self._build_repository.save(build)
 
-        plan = await self._agent_service.prepare_deployment(
-            build
+        artifact_manifest: list[str] = []
+
+        if build.proof and build.proof.artifacts:
+            artifact_manifest = list(
+                build.proof.artifacts.keys()
+            )
+
+        plan = DeploymentPlan(
+            status="ready",
+            target="poc-simulated-environment",
+            summary=(
+                "POC deployment plan is ready. "
+                "Real Azure deployment is deferred."
+            ),
+            blockers=[],
+            artifact_manifest=artifact_manifest,
         )
 
         build.deployment_plan = plan
@@ -1216,9 +1297,7 @@ class Orchestrator:
         self._set_agent(
             build,
             "Deployer Agent",
-            "Blocked"
-            if plan.status == "blocked"
-            else "Waiting",
+            "Ready",
             plan.summary,
         )
 
@@ -1227,21 +1306,22 @@ class Orchestrator:
             "Deploy Preflight",
             plan.summary,
             "Deployer Agent",
-            severity=(
-                "warning"
-                if plan.status == "blocked"
-                else "info"
-            ),
+            severity="info",
             metadata={
                 "target": plan.target,
                 "blockers": plan.blockers,
                 "files": len(plan.artifact_manifest),
+                "mode": "poc",
             },
         )
 
         self._build_repository.save(build)
 
         return plan
+
+    # ============================================================
+    # HUMAN APPROVAL
+    # ============================================================
 
     async def approve(
         self,
@@ -1402,6 +1482,10 @@ class Orchestrator:
 
         self._build_repository.save(build)
 
+    # ============================================================
+    # BLUEPRINT
+    # ============================================================
+
     def update_blueprint(
         self,
         build_id: str,
@@ -1465,6 +1549,10 @@ class Orchestrator:
 
         return build
 
+    # ============================================================
+    # REFINE
+    # ============================================================
+
     async def refine(
         self,
         build_id: str,
@@ -1490,6 +1578,10 @@ class Orchestrator:
         self._build_repository.save(build)
 
         return await self.start(build_id)
+
+    # ============================================================
+    # HELPERS
+    # ============================================================
 
     def get(self, build_id: str) -> BuildState:
         return self._build_repository.get(build_id)
