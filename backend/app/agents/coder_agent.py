@@ -14,6 +14,7 @@ from .artifact_limits import (
     PREFERRED_ARTIFACT_FILES,
 )
 from .spec_agent import SpecAgent
+from .deployment_contract import missing_copy_sources
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
             )
             response = await agent.run(json.dumps(context, ensure_ascii=False))
             data = SpecAgent._parse_json_response(str(response))
-            files = self._ensure_react_entrypoint(self._validate_files(data))
+            files = self._ensure_react_entrypoint(self._merge_repair_files(data, previous_artifacts))
             try:
                 files = self._validate_deployment_contract(files)
             except ValueError as exc:
@@ -131,9 +132,11 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
                             "file": "Dockerfile",
                             "issue": str(exc),
                             "recommendation": (
-                                "Add or correct a root Dockerfile that builds and starts the complete approved "
+                                "Resolve the reported packaging defect, including any missing COPY source files "
+                                "or dependency manifests. Add or correct a root Dockerfile that builds and starts the complete approved "
                                 "stack on 0.0.0.0:8080, includes EXPOSE 8080, and installs all runtime dependencies "
-                                "in the final image. Preserve the existing application and all approved features."
+                                "in the final image. Keep backend static-file paths consistent with the final image's "
+                                "frontend location. Preserve the existing application and all approved features."
                             ),
                         }
                     ],
@@ -143,7 +146,7 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
                 )
                 data = SpecAgent._parse_json_response(str(response))
                 files = self._validate_deployment_contract(
-                    self._ensure_react_entrypoint(self._validate_files(data))
+                    self._ensure_react_entrypoint(self._merge_repair_files(data, files))
                 )
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
@@ -180,6 +183,18 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
             raise RuntimeError(f"Foundry Coder Agent request failed ({type(exc).__name__})") from exc
         finally:
             credential.close()
+
+    @classmethod
+    def _merge_repair_files(
+        cls, data: dict[str, Any], previous: dict[str, str] | None
+    ) -> dict[str, str]:
+        # Repair responses cannot implicitly delete unaffected files. Validate
+        # the merged set again so the normal size and path limits still apply.
+        updated = cls._validate_files(data)
+        merged = {**(previous or {}), **updated}
+        return cls._validate_files({"files": [
+            {"path": path, "content": content} for path, content in merged.items()
+        ]})
 
     @classmethod
     def _validate_files(cls, data: dict[str, Any]) -> dict[str, str]:
@@ -312,6 +327,9 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
             )
         if re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
             raise ValueError("Coder Agent root Dockerfile must contain EXPOSE 8080")
+        missing = missing_copy_sources(files)
+        if missing:
+            raise ValueError("Dockerfile COPY requires missing project sources: " + ", ".join(missing))
         return files
 
     @staticmethod

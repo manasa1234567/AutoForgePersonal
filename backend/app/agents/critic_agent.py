@@ -21,6 +21,7 @@ from .artifact_limits import (
 from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .container_job_sandbox import ContainerAppsJobSandbox
 from .spec_agent import SpecAgent
+from .deployment_contract import missing_copy_sources
 
 
 @dataclass(frozen=True)
@@ -374,89 +375,21 @@ class CriticAgent:
                     )
                 )
 
-            final_stage = re.split(
-                r"(?im)^\s*FROM\s+",
-                dockerfile,
-            )[-1]
-            has_python_requirements = any(
-                path.lower().endswith("requirements.txt")
-                for path in artifacts
-            )
-            final_is_python = final_stage.lstrip().lower().startswith("python:")
-            installs_requirements_in_final = bool(
-                re.search(
-                    r"(?is)\bpip(?:3)?\s+install\b[^\n]*\s-r\s*[^\n]*requirements",
-                    final_stage,
-                )
-            )
-            copies_python_runtime = bool(
-                re.search(
-                    r"(?im)^\s*COPY\s+--from=\S+\s+/usr/local(?:/|\s)",
-                    final_stage,
-                )
-            )
-            if (
-                has_python_requirements
-                and final_is_python
-                and not installs_requirements_in_final
-                and not copies_python_runtime
-            ):
+            # Repository paths are not final image paths. Docker's build/startup
+            # preflight verifies imports and dependencies after COPY and WORKDIR.
+            for source in missing_copy_sources(artifacts):
                 checks["deployment_contract"] = "Failed"
                 findings.append(
                     CriticFinding(
                         severity="Critical",
                         file="Dockerfile",
-                        issue=(
-                            "Python requirements are not installed or copied into the final image stage."
-                        ),
+                        issue=f"Dockerfile COPY requires missing build-context source: {source}.",
                         recommendation=(
-                            "Install the generated requirements.txt in the final stage or copy the "
-                            "installed Python runtime from the dependency stage."
+                            "Include this file or directory in the complete generated artifact set, "
+                            "or correct the COPY source to the actual project path."
                         ),
                     )
                 )
-
-            uvicorn_command = next(
-                (
-                    line
-                    for line in final_stage.splitlines()
-                    if "uvicorn" in line.lower()
-                    and re.match(r"(?i)^\s*(?:CMD|ENTRYPOINT)\b", line)
-                ),
-                "",
-            )
-            uvicorn_target = re.search(
-                r"(?i)[\"']?([a-z_]\w*(?:\.[a-z_]\w*)*)\s*:\s*[a-z_]\w*",
-                uvicorn_command,
-            )
-            app_dir_match = re.search(
-                r"(?i)--app-dir(?:[\"',\s]+)([^\"',\]\s]+)",
-                uvicorn_command,
-            )
-            if uvicorn_target:
-                app_dir = (
-                    app_dir_match.group(1).replace("\\", "/").removeprefix("./").rstrip("/")
-                    if app_dir_match
-                    else ""
-                )
-                module_path = uvicorn_target.group(1).replace(".", "/") + ".py"
-                expected_path = f"{app_dir}/{module_path}" if app_dir else module_path
-                if expected_path not in artifacts:
-                    checks["deployment_contract"] = "Failed"
-                    findings.append(
-                        CriticFinding(
-                            severity="Critical",
-                            file="Dockerfile",
-                            issue=(
-                                f"The Uvicorn startup target resolves to {expected_path}, "
-                                "but that source file was not generated."
-                            ),
-                            recommendation=(
-                                "Correct CMD/ENTRYPOINT so its --app-dir and module path point "
-                                "to the generated FastAPI application."
-                            ),
-                        )
-                    )
 
         # ---------------------------------------------------------
         # SIZE LIMITS

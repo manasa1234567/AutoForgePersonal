@@ -748,7 +748,7 @@ class Orchestrator:
                 build,
                 "Prove",
                 f"Coder Agent revised artifacts after "
-                f"sandbox failure (attempt {attempt} "
+                f"validation findings (attempt {attempt} "
                 f"of {repair_limit})",
                 "Coder Agent",
                 severity="warning",
@@ -810,6 +810,7 @@ class Orchestrator:
             .lower()
             .startswith("passed")
             or critical_findings
+            or any(value == "Failed" for value in result.checks.values())
         )
 
         self._set_agent(
@@ -869,7 +870,17 @@ class Orchestrator:
             build.status = "Blocked"
             build.progress = 72
 
-            if (
+            failed_checks = [name for name, value in result.checks.items() if value == "Failed"]
+            if failed_checks:
+                details = " ".join(
+                    f"{finding.file or 'Project'}: {finding.issue}"
+                    for finding in result.findings[:3]
+                )
+                build.error = (
+                    f"Validation checks failed ({', '.join(failed_checks)}). "
+                    + (details or result.runtime_status)
+                )
+            elif (
                 critical_findings
                 and result.runtime_status
                 .lower()
@@ -885,11 +896,7 @@ class Orchestrator:
                 .lower()
                 .startswith("not run")
             ):
-                build.error = (
-                    "Runtime validation is blocked until the "
-                    "isolated Azure Container Apps sandbox is "
-                    "configured and enabled."
-                )
+                build.error = result.runtime_status
 
             else:
                 build.error = (
@@ -1161,6 +1168,7 @@ class Orchestrator:
             build.metrics.self_heal_iterations += 1
             build.skills_used.extend(repaired.skills_used)
             repaired_any = True
+            self._set_agent(build, "Coder Agent", "Ready", "Generated corrected artifacts")
 
             self._add_event(
                 build,
@@ -1214,6 +1222,9 @@ class Orchestrator:
                 continue
 
             self._set_agent(build, "Critic Agent", "Ready", critic.runtime_status)
+            # Security review reloads from durable storage, so persist the new
+            # Critic result first instead of restoring the previous snapshot.
+            self._build_repository.save(build)
             review = await self.run_security_review(build.id)
             build = self.get(build.id)
 
