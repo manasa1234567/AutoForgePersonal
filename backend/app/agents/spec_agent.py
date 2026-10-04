@@ -215,10 +215,64 @@ JSON only, without Markdown fences."""
         last = candidate.rfind("}")
         if first < 0 or last <= first:
             raise ValueError("Agent response did not contain a JSON object")
-        value = json.loads(candidate[first : last + 1])
+        candidate = SpecAgent._repair_json_string_content(candidate[first : last + 1])
+        value = json.loads(candidate)
         if not isinstance(value, dict):
             raise ValueError("Agent response JSON must be an object")
         return value
+
+    @staticmethod
+    def _repair_json_string_content(candidate: str) -> str:
+        """Repair invalid escapes/control bytes only while inside JSON strings.
+
+        Model output often contains multiline source code embedded in JSON. Keep
+        valid JSON escapes untouched, encode raw control characters, and turn
+        invalid backslash escapes into literal backslashes. Structural JSON
+        errors remain errors when json.loads parses the result.
+        """
+        output: list[str] = []
+        in_string = False
+        index = 0
+        valid_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t"}
+        while index < len(candidate):
+            char = candidate[index]
+            if not in_string:
+                output.append(char)
+                if char == '"':
+                    in_string = True
+                index += 1
+                continue
+
+            if char == '"':
+                output.append(char)
+                in_string = False
+                index += 1
+                continue
+            if char == "\\":
+                if index + 1 >= len(candidate):
+                    output.append("\\\\")
+                    index += 1
+                    continue
+                escaped = candidate[index + 1]
+                if escaped in valid_escapes:
+                    output.extend((char, escaped))
+                    index += 2
+                    continue
+                if escaped == "u" and index + 5 < len(candidate):
+                    digits = candidate[index + 2 : index + 6]
+                    if all(value in "0123456789abcdefABCDEF" for value in digits):
+                        output.append(candidate[index : index + 6])
+                        index += 6
+                        continue
+                output.append("\\\\")
+                index += 1
+                continue
+            if ord(char) < 0x20:
+                output.append(json.dumps(char, ensure_ascii=True)[1:-1])
+            else:
+                output.append(char)
+            index += 1
+        return "".join(output)
 
     async def _try_azure_openai(
         self,

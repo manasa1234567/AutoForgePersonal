@@ -167,6 +167,11 @@ class CoderAgent:
                 or not content.strip()
             ):
                 continue
+            # Model JSON may contain literal control bytes inside source text.
+            # Preserve normal source whitespace while removing non-text bytes.
+            content = "".join(char for char in content if ord(char) >= 0x20 or char in "\t\n\r")
+            if not content.strip():
+                continue
             if len(content.encode("utf-8")) > cls.max_file_bytes:
                 raise ValueError(f"Coder Agent file {path} exceeds the per-file size limit")
             files[path] = content
