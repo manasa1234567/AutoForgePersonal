@@ -2,7 +2,7 @@
 
 ## Release flow
 
-After the human approves release, AutoForge publishes reviewed files to a new `feature/<use-case-slug>-<8-character-build-id>` branch under `generated/<use-case-slug>-<build-id>/`. The branch creation event and later pushes to its generated source start `.github/workflows/deploy-generated-app.yml`.
+After the human approves release, AutoForge publishes reviewed files to a new `feature/<use-case-slug>-<8-character-build-id>` branch under `generated/<use-case-slug>-<build-id>/`. The resulting feature-branch push starts `.github/workflows/deploy-generated-app.yml`.
 
 The workflow builds and pushes an image to ACR, creates or updates a per-build Azure Container App in `aegis-env` / `aegis-rg`, enables external HTTPS ingress, smoke-checks the app, and sends an authenticated callback to the backend. The callback updates the build to `Deployed`, stores the live URL, and adds an audit event. A deployment error marks the build `Failed` and is recorded in the timeline. The build page polls while deployment is running and displays **Open deployed application** after success.
 

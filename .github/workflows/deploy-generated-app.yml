@@ -6,7 +6,6 @@ on:
       - "feature/**"
     paths:
       - "generated/**"
-  create:
   workflow_dispatch:
     inputs:
       branch:
@@ -24,12 +23,11 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'create' || startsWith(github.ref, 'refs/heads/feature/')
     runs-on: ubuntu-latest
     environment: production
     env:
       ACA_ENVIRONMENT_NAME: ${{ vars.ACA_ENVIRONMENT_NAME || 'aegis-env' }}
-      ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || 'aegis-rg' }}
+      ACA_RESOURCE_GROUP: ${{ vars.AZURE_RG || vars.ACA_RESOURCE_GROUP || 'aegis-rg' }}
       ACR_NAME: ${{ vars.ACR_NAME }}
       ACR_LOGIN_SERVER: ${{ vars.ACR_NAME }}.azurecr.io
       ACA_REGISTRY_IDENTITY: ${{ vars.FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID }}
