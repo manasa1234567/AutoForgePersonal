@@ -100,7 +100,11 @@ class CoderAgent:
 
         instructions += """
 
-Deployment packaging is mandatory for every technology stack. Include a file named exactly Dockerfile at the project root. It must install and build the complete approved application, including its frontend and backend when both are selected, start the application without an interactive shell, listen on 0.0.0.0 port 8080, and contain EXPOSE 8080. Do not assume React, Node.js, or any other specific framework. Include every dependency manifest, lock file, configuration file, and startup file required for docker build and container startup. Configure database and external-service connections through environment variables; never embed credentials. The container must start and return HTTP 200 at / even when an optional external database or service is not configured; keep the UI available and report the unavailable integration only when an affected operation is used. The root Dockerfile is the deployment interface used by Azure Container Apps.
+Deployment packaging is mandatory for every technology stack. Include a file named exactly Dockerfile at the project root. It must install and build the complete approved application, including its frontend and backend when both are selected, start the application without an interactive shell, listen on 0.0.0.0 port 8080, and contain EXPOSE 8080. Do not assume React, Node.js, or any other specific framework. Include every dependency manifest, lock file, configuration file, and startup file required for docker build and container startup. Every runtime dependency must be installed in or copied into the final image stage; do not install dependencies only in a discarded build stage. Verify that CMD or ENTRYPOINT references a module or executable that exists at its final-image path. Configure database and external-service connections through environment variables; never embed credentials. The container must start and return HTTP 200 at / even when an optional external database or service is not configured; keep the UI available and report the unavailable integration only when an affected operation is used. The root Dockerfile is the deployment interface used by Azure Container Apps.
+"""
+        instructions += """
+
+When previousGeneratedArtifacts and criticAndSandboxFindings identify a security issue, make the smallest complete code change that resolves the finding without hiding it, suppressing the scanner, or weakening security controls. Keep unaffected features and files intact.
 """
 
         try:
@@ -111,9 +115,36 @@ Deployment packaging is mandatory for every technology stack. Include a file nam
             )
             response = await agent.run(json.dumps(context, ensure_ascii=False))
             data = SpecAgent._parse_json_response(str(response))
-            files = self._validate_deployment_contract(
-                self._ensure_react_entrypoint(self._validate_files(data))
-            )
+            files = self._ensure_react_entrypoint(self._validate_files(data))
+            try:
+                files = self._validate_deployment_contract(files)
+            except ValueError as exc:
+                # A valid implementation can omit packaging metadata, especially
+                # on larger or less common stacks. Ask the same Coder Agent to
+                # repair that omission once while preserving all generated code.
+                repair_context = {
+                    **context,
+                    "previousGeneratedArtifacts": files,
+                    "criticAndSandboxFindings": [
+                        {
+                            "severity": "Critical",
+                            "file": "Dockerfile",
+                            "issue": str(exc),
+                            "recommendation": (
+                                "Add or correct a root Dockerfile that builds and starts the complete approved "
+                                "stack on 0.0.0.0:8080, includes EXPOSE 8080, and installs all runtime dependencies "
+                                "in the final image. Preserve the existing application and all approved features."
+                            ),
+                        }
+                    ],
+                }
+                response = await agent.run(
+                    json.dumps(repair_context, ensure_ascii=False)
+                )
+                data = SpecAgent._parse_json_response(str(response))
+                files = self._validate_deployment_contract(
+                    self._ensure_react_entrypoint(self._validate_files(data))
+                )
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
             skills_used: list[SkillUsage] = []

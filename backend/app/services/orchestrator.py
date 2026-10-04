@@ -634,19 +634,22 @@ class Orchestrator:
         repair_limit = 2
 
         for attempt in range(1, repair_limit + 1):
+            static_checks_failed = any(
+                value == "Failed"
+                for value in result.checks.values()
+            )
+            critical_findings = any(
+                finding.severity == "Critical"
+                for finding in result.findings
+            )
+            runtime_failed = result.runtime_status.lower().startswith("failed")
             if (
-                not result.runtime_status
-                .lower()
-                .startswith("failed")
-                or not result.mode.startswith(
-                    "foundry-static-review"
+                not (
+                    static_checks_failed
+                    or critical_findings
+                    or runtime_failed
                 )
                 or build.proof.generator_mode != "foundry-agent"
-                or os.getenv(
-                    "AUTOFORGE_SANDBOX_ENABLED",
-                    "false",
-                ).lower()
-                != "true"
             ):
                 break
 
@@ -950,6 +953,49 @@ class Orchestrator:
         # release because it sees security_review=None.
         build = self.get(build_id)
 
+        repaired_for_security = False
+
+        if (
+            review.decision == "Block release"
+            and build.proof is not None
+            and build.proof.generator_mode == "foundry-agent"
+        ):
+            review, build, repaired_for_security = await self._repair_security_findings(
+                build,
+                review,
+                repair_limit=2,
+            )
+
+        if repaired_for_security and review.decision != "Block release":
+            # Security remediation changes the source after the previous
+            # artifact approval. Require a fresh human approval before proof
+            # and release continue with the corrected files.
+            self._set_agent(
+                build,
+                "Security Reviewer",
+                "Ready",
+                "Security findings were remediated; updated artifacts need approval",
+            )
+            build.stage = "Prove"
+            build.progress = 72
+            build.approval_gate = "artifacts"
+            build.status = "Awaiting Approval"
+            build.error = None
+            self._add_event(
+                build,
+                "Security",
+                "Coder Agent remediated security findings. Review and approve the updated artifacts before validation continues.",
+                "Security Reviewer",
+                severity="warning",
+                metadata={
+                    "decision": review.decision,
+                    "findings": len(review.findings),
+                    "remediation_iterations": build.metrics.self_heal_iterations,
+                },
+            )
+            self._build_repository.save(build)
+            return
+
         # --------------------------------------------------------
         # POC RELEASE POLICY
         # --------------------------------------------------------
@@ -1045,6 +1091,133 @@ class Orchestrator:
         build.progress = 93
 
         self._build_repository.save(build)
+
+    async def _repair_security_findings(
+        self,
+        build: BuildState,
+        review: SecurityReview,
+        *,
+        repair_limit: int,
+    ) -> tuple[SecurityReview, BuildState, bool]:
+        """Use bounded Coder repairs for generated-source security findings."""
+        repaired_any = False
+        remaining = repair_limit
+
+        for attempt in range(1, remaining + 1):
+            if review.decision != "Block release" or build.proof is None or build.blueprint is None:
+                break
+
+            self._set_agent(
+                build,
+                "Coder Agent",
+                "Running",
+                f"Repairing security findings (attempt {attempt} of {remaining})",
+            )
+            self._build_repository.save(build)
+
+            coder_recipes = skill_registry.retrieve(
+                agent="Coder Agent",
+                query=self._skill_query(build),
+                limit=5,
+            )
+            try:
+                repaired = await self._agent_service.run_coder_agent(
+                    title=build.title,
+                    blueprint=build.blueprint,
+                    requirements=build.requirements,
+                    acceptance_criteria=build.acceptance_criteria,
+                    skills=coder_recipes,
+                    previous_artifacts=build.proof.artifacts,
+                    repair_findings=[
+                        finding.model_dump(by_alias=True)
+                        for finding in review.findings
+                    ],
+                )
+            except Exception as exc:
+                self._set_agent(
+                    build,
+                    "Coder Agent",
+                    "Failed",
+                    f"Security remediation failed ({type(exc).__name__})",
+                )
+                self._add_event(
+                    build,
+                    "Security",
+                    "Coder Agent could not produce a valid security remediation; release remains blocked.",
+                    "Coder Agent",
+                    severity="error",
+                    metadata={"attempt": attempt, "error_type": type(exc).__name__},
+                )
+                self._build_repository.save(build)
+                break
+            if repaired.mode == "foundry-agent":
+                self._record_skill_retrieval(build, coder_recipes, "Coder Agent")
+
+            build.proof.artifacts = repaired.files
+            build.proof.files = list(repaired.files)
+            build.proof.code = repaired.files
+            build.metrics.tokens += repaired.tokens
+            build.metrics.tool_calls += int(repaired.mode == "foundry-agent")
+            build.metrics.self_heal_iterations += 1
+            build.skills_used.extend(repaired.skills_used)
+            repaired_any = True
+
+            self._add_event(
+                build,
+                "Security",
+                f"Coder Agent produced security remediation attempt {attempt} of {remaining}",
+                "Coder Agent",
+                severity="warning",
+                metadata={"findings": len(review.findings)},
+            )
+            self._build_repository.save(build)
+
+            critic_recipes = skill_registry.retrieve(
+                agent="Critic Agent",
+                query=self._skill_query(build),
+                limit=5,
+            )
+            critic = await self._agent_service.run_critic_agent(
+                title=build.title,
+                blueprint=build.blueprint,
+                requirements=build.requirements,
+                acceptance_criteria=build.acceptance_criteria,
+                artifacts=build.proof.artifacts,
+                skills=critic_recipes,
+            )
+            build.proof.critic_mode = critic.mode
+            build.proof.critic_summary = critic.summary
+            build.proof.critic_findings = critic.findings
+            build.proof.requirement_coverage = critic.requirement_coverage
+            build.proof.test_plan = critic.test_plan
+            build.proof.checks = critic.checks
+            build.proof.runtime_status = critic.runtime_status
+            build.proof.integration = critic.runtime_status
+
+            critic_blockers = (
+                any(value == "Failed" for value in critic.checks.values())
+                or any(item.severity == "Critical" for item in critic.findings)
+                or not critic.runtime_status.lower().startswith("passed")
+            )
+            if critic_blockers:
+                review.findings.extend(
+                    item for item in critic.findings if item not in review.findings
+                )
+                review = review.model_copy(update={"decision": "Block release"})
+                self._set_agent(
+                    build,
+                    "Critic Agent",
+                    "Blocked",
+                    "Remediated artifacts did not pass source and runtime validation",
+                )
+                self._build_repository.save(build)
+                continue
+
+            self._set_agent(build, "Critic Agent", "Ready", critic.runtime_status)
+            review = await self.run_security_review(build.id)
+            build = self.get(build.id)
+
+        return review, build, repaired_any
 
     async def run_security_review(
         self,

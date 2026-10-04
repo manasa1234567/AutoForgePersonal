@@ -360,18 +360,103 @@ class CriticAgent:
                     ),
                 )
             )
-        elif re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
-            checks["deployment_contract"] = "Failed"
-            findings.append(
-                CriticFinding(
-                    severity="Critical",
-                    file="Dockerfile",
-                    issue="The root Dockerfile does not expose the required port 8080.",
-                    recommendation=(
-                        "Configure the application to listen on 0.0.0.0:8080 and add EXPOSE 8080."
-                    ),
+        else:
+            if re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
+                checks["deployment_contract"] = "Failed"
+                findings.append(
+                    CriticFinding(
+                        severity="Critical",
+                        file="Dockerfile",
+                        issue="The root Dockerfile does not expose the required port 8080.",
+                        recommendation=(
+                            "Configure the application to listen on 0.0.0.0:8080 and add EXPOSE 8080."
+                        ),
+                    )
+                )
+
+            final_stage = re.split(
+                r"(?im)^\s*FROM\s+",
+                dockerfile,
+            )[-1]
+            has_python_requirements = any(
+                path.lower().endswith("requirements.txt")
+                for path in artifacts
+            )
+            final_is_python = final_stage.lstrip().lower().startswith("python:")
+            installs_requirements_in_final = bool(
+                re.search(
+                    r"(?is)\bpip(?:3)?\s+install\b[^\n]*\s-r\s*[^\n]*requirements",
+                    final_stage,
                 )
             )
+            copies_python_runtime = bool(
+                re.search(
+                    r"(?im)^\s*COPY\s+--from=\S+\s+/usr/local(?:/|\s)",
+                    final_stage,
+                )
+            )
+            if (
+                has_python_requirements
+                and final_is_python
+                and not installs_requirements_in_final
+                and not copies_python_runtime
+            ):
+                checks["deployment_contract"] = "Failed"
+                findings.append(
+                    CriticFinding(
+                        severity="Critical",
+                        file="Dockerfile",
+                        issue=(
+                            "Python requirements are not installed or copied into the final image stage."
+                        ),
+                        recommendation=(
+                            "Install the generated requirements.txt in the final stage or copy the "
+                            "installed Python runtime from the dependency stage."
+                        ),
+                    )
+                )
+
+            uvicorn_command = next(
+                (
+                    line
+                    for line in final_stage.splitlines()
+                    if "uvicorn" in line.lower()
+                    and re.match(r"(?i)^\s*(?:CMD|ENTRYPOINT)\b", line)
+                ),
+                "",
+            )
+            uvicorn_target = re.search(
+                r"(?i)[\"']?([a-z_]\w*(?:\.[a-z_]\w*)*)\s*:\s*[a-z_]\w*",
+                uvicorn_command,
+            )
+            app_dir_match = re.search(
+                r"(?i)--app-dir(?:[\"',\s]+)([^\"',\]\s]+)",
+                uvicorn_command,
+            )
+            if uvicorn_target:
+                app_dir = (
+                    app_dir_match.group(1).replace("\\", "/").removeprefix("./").rstrip("/")
+                    if app_dir_match
+                    else ""
+                )
+                module_path = uvicorn_target.group(1).replace(".", "/") + ".py"
+                expected_path = f"{app_dir}/{module_path}" if app_dir else module_path
+                if expected_path not in artifacts:
+                    checks["deployment_contract"] = "Failed"
+                    findings.append(
+                        CriticFinding(
+                            severity="Critical",
+                            file="Dockerfile",
+                            issue=(
+                                f"The Uvicorn startup target resolves to {expected_path}, "
+                                "but that source file was not generated."
+                            ),
+                            recommendation=(
+                                "Correct CMD/ENTRYPOINT so its --app-dir and module path point "
+                                "to the generated FastAPI application."
+                            ),
+                        )
+                    )
 
         # ---------------------------------------------------------
         # SIZE LIMITS

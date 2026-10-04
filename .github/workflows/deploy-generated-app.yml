@@ -228,6 +228,36 @@ jobs:
           IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID"
           az acr login --name "$ACR_NAME"
           docker build --file "$DOCKERFILE" --tag "$IMAGE" "$CONTEXT"
+
+          CONTAINER_ID=$(docker run --detach --publish "127.0.0.1::$PORT" "$IMAGE")
+          cleanup_container() {
+            docker logs "$CONTAINER_ID" 2>&1 || true
+            docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true
+          }
+          trap cleanup_container EXIT
+          HOST_PORT=$(docker port "$CONTAINER_ID" "$PORT/tcp" | head -n 1 | awk -F: '{print $NF}')
+          PREFLIGHT_OK=false
+          for attempt in {1..30}; do
+            STATUS=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \
+              "http://127.0.0.1:$HOST_PORT/" || true)
+            echo "Container preflight $attempt: HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              PREFLIGHT_OK=true
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' "$CONTAINER_ID" 2>/dev/null | grep -q true; then
+              echo "Generated container exited during startup." >&2
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$PREFLIGHT_OK" != "true" ]]; then
+            echo "Generated image did not pass the local HTTP startup check." >&2
+            exit 1
+          fi
+          trap - EXIT
+          cleanup_container
+
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "port=$PORT" >> "$GITHUB_OUTPUT"
@@ -278,15 +308,23 @@ jobs:
       - name: Smoke test deployed application
         env:
           APP_URL: ${{ steps.app.outputs.app_url }}
+          APP_NAME: ${{ steps.config.outputs.app_name }}
         shell: bash
         run: |
           set -euo pipefail
           for attempt in {1..12}; do
-            STATUS=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$APP_URL/" || true)
+            STATUS=$(curl -sS --connect-timeout 3 --max-time 5 -o /dev/null -w '%{http_code}' "$APP_URL/" || true)
             echo "Smoke test $attempt: HTTP $STATUS"
             if [[ "$STATUS" == "200" ]]; then exit 0; fi
-            sleep 10
+            sleep 5
           done
+          echo "Azure revision state:" >&2
+          az containerapp revision list --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+            --query '[].{name:name,active:properties.active,health:properties.healthState,provisioning:properties.provisioningState}' \
+            --output table || true
+          echo "Recent container logs:" >&2
+          az containerapp logs show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+            --tail 100 || true
           echo "Generated application did not return HTTP 200 from $APP_URL." >&2
           exit 1
 
