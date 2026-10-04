@@ -111,14 +111,16 @@ class Blueprint(ApiModel):
 
 
 class BlueprintUpdate(ApiModel):
-    application: str = Field(min_length=1, max_length=160)
-    frontend: str = Field(min_length=1, max_length=240)
-    backend: str = Field(min_length=1, max_length=240)
-    data: str = Field(min_length=1, max_length=240)
-    storage: str = Field(min_length=1, max_length=240)
-    messaging: str = Field(min_length=1, max_length=240)
-    identity: str = Field(min_length=1, max_length=240)
-    deployment: str = Field(min_length=1, max_length=240)
+    # Keep update limits in sync with ArchitectureAgent's 500-character
+    # normalization so a generated choice can always be edited and saved.
+    application: str = Field(min_length=1, max_length=500)
+    frontend: str = Field(min_length=1, max_length=500)
+    backend: str = Field(min_length=1, max_length=500)
+    data: str = Field(min_length=1, max_length=500)
+    storage: str = Field(min_length=1, max_length=500)
+    messaging: str = Field(min_length=1, max_length=500)
+    identity: str = Field(min_length=1, max_length=500)
+    deployment: str = Field(min_length=1, max_length=500)
     security: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator(

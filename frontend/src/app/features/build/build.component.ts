@@ -485,6 +485,12 @@ export class BuildComponent implements OnInit {
 
     };
 
+    if (request.security.length > 20) {
+      this.loadError = 'Please limit the security controls to 20 lines before saving.';
+      this.cdr.markForCheck();
+      return;
+    }
+
     const unchanged = this.build.blueprint &&
       JSON.stringify(request) === JSON.stringify(this.toBlueprintUpdate(this.build.blueprint));
 
@@ -581,6 +587,16 @@ export class BuildComponent implements OnInit {
           const detail = (body as { detail?: unknown }).detail;
 
           if (typeof detail === 'string' && detail.trim()) return detail;
+          if (Array.isArray(detail)) {
+            const messages = detail.map((issue) => {
+              if (typeof issue !== 'object' || issue === null) return '';
+              const item = issue as { loc?: unknown; msg?: unknown };
+              const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').join('.') : '';
+              const message = typeof item.msg === 'string' ? item.msg : 'is invalid';
+              return location ? `${location}: ${message}` : message;
+            }).filter(Boolean);
+            if (messages.length) return messages.join('; ');
+          }
 
         }
 

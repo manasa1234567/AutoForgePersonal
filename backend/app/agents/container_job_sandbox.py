@@ -8,12 +8,6 @@ from typing import Any
 
 import httpx
 
-from azure.identity.aio import (
-    DefaultAzureCredential,
-    ManagedIdentityCredential,
-)
-from azure.storage.blob.aio import BlobServiceClient
-
 from ..models.schemas import (
     Blueprint,
     CriticFinding,
@@ -307,6 +301,14 @@ class ContainerAppsJobSandbox:
 
     def _credential(self):
 
+        try:
+            from azure.identity.aio import DefaultAzureCredential, ManagedIdentityCredential
+        except ImportError as exc:
+            raise RuntimeError(
+                "Azure Container Apps Job sandbox requires azure-identity. "
+                "Install backend/requirements.txt in the active Python environment."
+            ) from exc
+
         identity_mode = os.getenv(
             "AUTOFORGE_IDENTITY_MODE",
             "managed_identity",
@@ -345,6 +347,14 @@ class ContainerAppsJobSandbox:
         blob_name: str,
         data: dict[str, Any],
     ) -> None:
+
+        try:
+            from azure.storage.blob.aio import BlobServiceClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "Azure Container Apps Job sandbox requires azure-storage-blob. "
+                "Install backend/requirements.txt in the active Python environment."
+            ) from exc
 
         credential = self._credential()
 
@@ -387,6 +397,14 @@ class ContainerAppsJobSandbox:
         self,
         blob_name: str,
     ) -> dict[str, Any] | None:
+
+        try:
+            from azure.storage.blob.aio import BlobServiceClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "Azure Container Apps Job sandbox requires azure-storage-blob. "
+                "Install backend/requirements.txt in the active Python environment."
+            ) from exc
 
         credential = self._credential()
 
