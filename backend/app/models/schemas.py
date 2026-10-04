@@ -286,6 +286,10 @@ class BuildState(ApiModel):
     release: ReleaseResult | None = None
     security_review: SecurityReview | None = None
     deployment_plan: DeploymentPlan | None = None
+    feature_branch: str | None = None
+    feature_branch_url: str | None = None
+    repository_url: str | None = None
+    deployed_url: str | None = None
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)

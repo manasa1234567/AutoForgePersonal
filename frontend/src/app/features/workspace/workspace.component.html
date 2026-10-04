@@ -118,20 +118,20 @@
         <section class="settings-card deployment-setup-card">
           <span class="section-kicker">AGENT 6 · DEPLOYMENT SETUP</span>
           <h2>GitHub branch and Azure preview</h2>
-          <p>Each build is intended to publish to a new feature branch, open a pull request, and deploy a preview to Azure Container Apps. Branch format: <code>{{ deploymentSetup?.branchPattern ?? 'feature/&lt;use-case-slug&gt;-&lt;build-id&gt;' }}</code>.</p>
+          <p>After release approval, reviewed files publish to a new GitHub feature branch. Branch format: <code>{{ deploymentSetup?.branchPattern ?? 'feature/&lt;use-case-slug&gt;-&lt;build-id&gt;' }}</code>. Azure deployment and the live URL are not connected yet.</p>
           @if (deploymentSetupError) { <p class="workspace-error" role="alert">{{ deploymentSetupError }}</p> }
           @if (deploymentSetup; as setup) {
             <div class="integration-row"><span class="integration-mark">GH</span><span><strong>GitHub repository</strong><small>manasa1234567/AutoForgePersonal</small></span><b>{{ setup.github.repository ? 'Configured' : 'Needs setup' }}</b></div>
             <div class="integration-row"><span class="integration-mark">GH</span><span><strong>GitHub App identity</strong><small>App ID, installation ID, and private key must be stored server-side</small></span><b>{{ setup.github.app_identity ? 'Configured' : 'Needs setup' }}</b></div>
             <div class="integration-row"><span class="integration-mark">AZ</span><span><strong>Azure Container Apps</strong><small>Subscription, resource group, ACR, environment, and managed identity</small></span><b>{{ setup.azureContainerApps.container_apps_environment ? 'Environment configured' : 'Needs setup' }}</b></div>
             <div class="integration-row"><span class="integration-mark">QA</span><span><strong>Isolated runtime validation</strong><small>Generated code must pass sandbox validation before publishing or deployment</small></span><b>{{ setup.validation.isolated_validation ? 'Configured' : 'Needs setup' }}</b></div>
-            <div class="environment-note"><strong>Current capability</strong><span>{{ setup.note }} Branch publishing and ACA preview deployment are not implemented yet; this panel reports setup requirements only.</span></div>
+            <div class="environment-note"><strong>Current capability</strong><span>{{ setup.note }}</span></div>
           }
           <div class="reasoning"><h3>Setup steps</h3>
             <span>1. Preview target confirmed: Container Apps environment <code>aegis-env</code>, resource group <code>aegis-rg</code>, Central India. The subscription ID is read from the existing Azure deployment credentials.</span>
-            <span>2. In GitHub, create a GitHub App, set repository permissions Contents and Pull requests to Read and write, and install it only on AutoForgePersonal. Record its App ID and installation ID, then generate a private key. Do not grant access to unrelated repositories.</span>
-            <span>3. Store the App private key as a backend secret (prefer Azure Key Vault). Set GITHUB_APP_PRIVATE_KEY_BASE64, GITHUB_APP_ID, GITHUB_INSTALLATION_ID, AUTOFORGE_GITHUB_OWNER, AUTOFORGE_GITHUB_REPOSITORY, ACA_ENVIRONMENT_NAME, ACA_RESOURCE_GROUP, ACR_LOGIN_SERVER, AZURE_SUBSCRIPTION_ID, and AZURE_RESOURCE_GROUP on the backend.</span>
-            <span>4. Grant the backend managed identity only the Azure roles needed to build/push preview images and create/update/delete preview Container Apps. Keep preview apps isolated from production data and credentials.</span>
+            <span>2. In GitHub, create a GitHub App, set repository permission Contents to Read and write, and install it only on AutoForgePersonal. Record its App ID and installation ID, then generate a private key. Do not grant access to unrelated repositories. Pull request permission is not needed.</span>
+            <span>3. Add AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64 as a GitHub Actions secret, and AUTOFORGE_GITHUB_APP_ID, AUTOFORGE_GITHUB_INSTALLATION_ID, and AUTOFORGE_GITHUB_PUBLISH_ENABLED=true as repository variables. CD stores the private key as an Azure Container App secret. Keep AUTOFORGE_GITHUB_OWNER=manasa1234567 and AUTOFORGE_GITHUB_REPOSITORY=AutoForgePersonal.</span>
+            <span>4. Do not add Azure deployment roles yet. The per-build image/deployment pipeline and its least-privilege role scope are not implemented.</span>
           </div>
         </section>
         <div class="settings-grid">

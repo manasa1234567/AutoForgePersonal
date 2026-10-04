@@ -17,9 +17,10 @@ async def deployment_status() -> dict[str, object]:
     github = {
         "repository": _configured("AUTOFORGE_GITHUB_OWNER") and _configured("AUTOFORGE_GITHUB_REPOSITORY"),
         "app_identity": all(_configured(name) for name in (
-            "GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64",
+            "AUTOFORGE_GITHUB_APP_ID", "AUTOFORGE_GITHUB_INSTALLATION_ID", "AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64",
         )),
-        "contents_and_pull_requests": "Requires a GitHub App installation with Contents and Pull requests read/write permissions.",
+        "branch_publishing_enabled": os.getenv("AUTOFORGE_GITHUB_PUBLISH_ENABLED", "false").lower() == "true",
+        "contents_permission": "Requires the installed GitHub App to have Contents read/write access. Pull request access is not used.",
     }
     azure = {
         "subscription": _configured("AZURE_SUBSCRIPTION_ID"),
@@ -42,6 +43,7 @@ async def deployment_status() -> dict[str, object]:
         "azureContainerApps": azure,
         "validation": runtime,
         "branchPattern": "feature/<use-case-slug>-<build-id>",
+        "branchPublishingImplemented": True,
         "deploymentImplemented": False,
-        "note": "This is a setup checklist only. GitHub branch/PR publishing and Azure preview deployment are not implemented yet.",
+        "note": "After release approval, reviewed artifacts can be committed to a new feature branch. Azure app packaging/deployment and returning a live URL are still pending.",
     }

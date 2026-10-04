@@ -27,6 +27,7 @@ from .skill_registry import skill_registry
 from .jira_client import JiraClient
 from .job_dispatcher import BuildJobDispatcher, InProcessBuildJobDispatcher
 from .source_documents import extract_source_documents
+from .github_publisher import GitHubPublisher
 
 
 class Orchestrator:
@@ -1128,18 +1129,10 @@ class Orchestrator:
         return review
 
     # ============================================================
-    # POC DEPLOYMENT
+    # RELEASE PUBLICATION
     # ============================================================
 
     async def _deploy(self, build: BuildState) -> None:
-        """
-        POC deployment handler.
-
-        For the POC we do not perform a real Azure deployment.
-        We only verify that generated artifacts exist and
-        mark the deployment as simulated.
-        """
-
         build.stage = "Release"
         build.progress = 95
 
@@ -1147,108 +1140,46 @@ class Orchestrator:
             build,
             "Deployer Agent",
             "Running",
-            "Preparing POC deployment",
+            "Publishing reviewed source to a new GitHub feature branch",
         )
 
         self._build_repository.save(build)
 
-        # --------------------------------------------------------
-        # Validate generated artifacts
-        # --------------------------------------------------------
+        if build.proof is None or not build.proof.artifacts:
+            raise RuntimeError("Release stopped: no generated artifacts are available to publish.")
+        if build.security_review is None or build.security_review.decision == "Block release":
+            raise RuntimeError("Release stopped: the Security Reviewer has not approved these artifacts.")
+        if not build.proof.runtime_status.lower().startswith("passed"):
+            raise RuntimeError("Release stopped: isolated runtime validation must pass before publishing.")
 
-        if build.proof is None:
-            build.status = "Blocked"
-            build.error = (
-                "POC deployment cannot continue because "
-                "generated artifacts are missing."
-            )
+        published = await GitHubPublisher().publish(build)
+        build.feature_branch = published["branch"]
+        build.feature_branch_url = published["branch_url"]
+        build.repository_url = published["repository_url"]
 
-            self._set_agent(
-                build,
-                "Deployer Agent",
-                "Blocked",
-                build.error,
-            )
-
-            self._add_event(
-                build,
-                "Deploy",
-                build.error,
-                "Deployer Agent",
-                severity="error",
-            )
-
-            self._build_repository.save(build)
-            return
-
-        if not build.proof.artifacts:
-            build.status = "Blocked"
-            build.error = (
-                "POC deployment cannot continue because "
-                "no generated artifacts were found."
-            )
-
-            self._set_agent(
-                build,
-                "Deployer Agent",
-                "Blocked",
-                build.error,
-            )
-
-            self._add_event(
-                build,
-                "Deploy",
-                build.error,
-                "Deployer Agent",
-                severity="error",
-            )
-
-            self._build_repository.save(build)
-            return
-
-        artifact_count = len(build.proof.artifacts)
-
-        # --------------------------------------------------------
-        # POC deployment plan
-        # --------------------------------------------------------
-
-        plan = await self.prepare_deployment(build.id)
-
-        build.deployment_plan = plan
-
-        # --------------------------------------------------------
-        # Simulated deployment
-        # --------------------------------------------------------
-
-        self._set_agent(
-            build,
-            "Deployer Agent",
-            "Ready",
-            "POC deployment completed successfully "
-            f"with {artifact_count} artifact(s)",
-        )
-
+        self._set_agent(build, "Deployer Agent", "Ready", f"Reviewed source published to {build.feature_branch}")
         self._add_event(
             build,
-            "Deploy",
-            "POC deployment completed successfully. "
-            "No real Azure deployment was performed.",
+            "GitHub Publish",
+            f"Reviewed source committed to {build.feature_branch}",
             "Deployer Agent",
-            severity="info",
-            metadata={
-                "mode": "poc",
-                "deployment": "simulated",
-                "target": plan.target,
-                "artifacts": artifact_count,
-                "files": plan.artifact_manifest,
-            },
+            metadata={"branch": build.feature_branch, "branch_url": build.feature_branch_url, "commit": published["commit_sha"]},
         )
 
-        build.status = "Deployed"
+        # Publishing is real. ACA deployment is intentionally left pending until
+        # a generated-app build/deploy workflow can produce and verify a live URL.
         build.stage = "Release"
         build.approval_gate = None
         build.progress = 100
         build.error = None
+        build.status = "Completed"
+        self._add_event(
+            build,
+            "Deployment Pending",
+            "Source is published. Azure deployment has not run, so no live application URL is available yet.",
+            "Deployer Agent",
+            severity="warning",
+        )
 
         self._build_repository.save(build)
 
@@ -1256,78 +1187,32 @@ class Orchestrator:
         self,
         build_id: str,
     ) -> DeploymentPlan:
-        """
-        Prepare a simple deployment plan for the POC.
-
-        No real Azure deployment or enterprise preflight checks
-        are required at this stage.
-        """
-
         build = self.get(build_id)
-
         self._set_agent(
             build,
             "Deployer Agent",
             "Running",
-            "Preparing POC deployment plan",
+            "Checking Azure deployment prerequisites",
         )
-
         self._build_repository.save(build)
-
-        artifact_manifest: list[dict[str, object]] = []
-
-        if build.proof and build.proof.artifacts:
-            for path, content in build.proof.artifacts.items():
-                artifact_manifest.append(
-                    {
-                        "path": path,
-                        "size": len(str(content)),
-                    }
-                )
-
-        image_tag = (
-            f"autoforge/{self._slug(build.title)}:"
-            f"{build.id}"
-        )
-
-        plan = DeploymentPlan(
-            status="ready",
-            target="poc-simulated-environment",
-            imageTag=image_tag,
-            summary=(
-                "POC deployment plan is ready. "
-                "Real Azure deployment is deferred."
-            ),
-            blockers=[],
-            artifact_manifest=artifact_manifest,
-        )
-
+        plan = await self._agent_service.prepare_deployment(build)
         build.deployment_plan = plan
-
-        self._set_agent(
-            build,
-            "Deployer Agent",
-            "Ready",
-            plan.summary,
-        )
-
+        status = "Ready" if plan.status == "ready" else "Blocked"
+        self._set_agent(build, "Deployer Agent", status, plan.summary)
         self._add_event(
             build,
             "Deploy Preflight",
             plan.summary,
             "Deployer Agent",
-            severity="info",
+            severity="info" if plan.status == "ready" else "warning",
             metadata={
                 "target": plan.target,
-                "image_tag": image_tag,
+                "image_tag": plan.image_tag,
                 "blockers": plan.blockers,
                 "files": len(plan.artifact_manifest),
-                "mode": "poc",
             },
         )
-
         self._build_repository.save(build)
-
         return plan
 
     # ============================================================

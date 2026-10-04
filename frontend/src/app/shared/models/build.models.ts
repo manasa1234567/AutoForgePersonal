@@ -192,6 +192,10 @@ export interface BuildState {
   release: ReleaseResult | null;
   securityReview: SecurityReview | null;
   deploymentPlan: DeploymentPlan | null;
+  featureBranch: string | null;
+  featureBranchUrl: string | null;
+  repositoryUrl: string | null;
+  deployedUrl: string | null;
   skillProposal: SkillProposal | null;
   skillsUsed: SkillUsage[];
   agents: AgentState[];

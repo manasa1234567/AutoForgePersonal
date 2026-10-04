@@ -58,6 +58,11 @@ jobs:
       AUTOFORGE_BLOB_ACCOUNT_URL: ${{ vars.AUTOFORGE_BLOB_ACCOUNT_URL }}
       AUTOFORGE_BLOB_SPECS_CONTAINER: ${{ vars.AUTOFORGE_BLOB_SPECS_CONTAINER || 'specs' }}
       AUTOFORGE_BLOB_WORKSPACES_CONTAINER: ${{ vars.AUTOFORGE_BLOB_WORKSPACES_CONTAINER || 'workspaces' }}
+      AUTOFORGE_GITHUB_PUBLISH_ENABLED: ${{ vars.AUTOFORGE_GITHUB_PUBLISH_ENABLED || 'false' }}
+      AUTOFORGE_GITHUB_BASE_BRANCH: ${{ vars.AUTOFORGE_GITHUB_BASE_BRANCH || '' }}
+      AUTOFORGE_GITHUB_APP_ID: ${{ vars.AUTOFORGE_GITHUB_APP_ID }}
+      AUTOFORGE_GITHUB_INSTALLATION_ID: ${{ vars.AUTOFORGE_GITHUB_INSTALLATION_ID }}
+      AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64: ${{ secrets.AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -166,7 +171,22 @@ jobs:
               "ACA_RESOURCE_GROUP=$ACA_RESOURCE_GROUP" \
               "AUTOFORGE_GITHUB_OWNER=$AUTOFORGE_GITHUB_OWNER" \
               "AUTOFORGE_GITHUB_REPOSITORY=$AUTOFORGE_GITHUB_REPOSITORY" \
+              "AUTOFORGE_GITHUB_PUBLISH_ENABLED=$AUTOFORGE_GITHUB_PUBLISH_ENABLED" \
+              "AUTOFORGE_GITHUB_BASE_BRANCH=$AUTOFORGE_GITHUB_BASE_BRANCH" \
               AUTOFORGE_DEPLOYMENT_ENABLED=false
+          if [[ "$AUTOFORGE_GITHUB_PUBLISH_ENABLED" == "true" && -n "$AUTOFORGE_GITHUB_APP_ID" && -n "$AUTOFORGE_GITHUB_INSTALLATION_ID" && -n "$AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64" ]]; then
+            az containerapp secret set -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --secrets "autoforge-github-app-private-key=$AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64"
+            az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --set-env-vars \
+                "AUTOFORGE_GITHUB_APP_ID=$AUTOFORGE_GITHUB_APP_ID" \
+                "AUTOFORGE_GITHUB_INSTALLATION_ID=$AUTOFORGE_GITHUB_INSTALLATION_ID" \
+                AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64=secretref:autoforge-github-app-private-key
+          else
+            echo "GitHub branch publishing remains disabled until its App credentials and AUTOFORGE_GITHUB_PUBLISH_ENABLED are configured."
+            az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+              --set-env-vars AUTOFORGE_GITHUB_PUBLISH_ENABLED=false
+          fi
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --image $REGISTRY/aegis-backend:$IMAGE_TAG
 

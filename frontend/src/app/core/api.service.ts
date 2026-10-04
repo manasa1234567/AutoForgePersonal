@@ -68,7 +68,8 @@ export interface DeploymentSetupStatus {
   github: {
     repository: boolean;
     app_identity: boolean;
-    contents_and_pull_requests: string;
+    branch_publishing_enabled: boolean;
+    contents_permission: string;
   };
   azureContainerApps: {
     subscription: boolean;
@@ -80,6 +81,7 @@ export interface DeploymentSetupStatus {
   };
   validation: { isolated_validation: boolean };
   branchPattern: string;
+  branchPublishingImplemented: boolean;
   deploymentImplemented: boolean;
   note: string;
 }
