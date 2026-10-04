@@ -221,7 +221,15 @@ jobs:
           APP_NAME: ${{ steps.config.outputs.app_name }}
         run: |
           set -euo pipefail
-          if az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" >/dev/null 2>&1; then
+          APP_STATE=$(az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+            --query properties.provisioningState -o tsv 2>/dev/null || true)
+          if [[ "$APP_STATE" == "Failed" ]]; then
+            echo "Removing failed generated Container App $APP_NAME before retrying deployment."
+            az containerapp delete --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --yes --output none
+            APP_STATE=""
+          fi
+          if [[ -n "$APP_STATE" ]]; then
             az containerapp identity assign --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
               --user-assigned "$ACA_REGISTRY_IDENTITY" --output none
             az containerapp registry set --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
