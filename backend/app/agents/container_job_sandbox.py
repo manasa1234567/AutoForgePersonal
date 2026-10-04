@@ -6,6 +6,7 @@ import os
 import uuid
 from typing import Any
 
+import httpx
 from azure.identity.aio import (
     DefaultAzureCredential,
     ManagedIdentityCredential,
@@ -31,7 +32,7 @@ class ContainerAppsJobSandbox:
            v
         Azure Blob Storage
            |
-           | start Job
+           | start Job + AUTOFORGE_RUN_ID
            v
         Container Apps Job
            |
@@ -47,7 +48,6 @@ class ContainerAppsJobSandbox:
     """
 
     def __init__(self) -> None:
-
         self.subscription_id = self._required(
             "AZURE_SUBSCRIPTION_ID"
         )
@@ -74,9 +74,10 @@ class ContainerAppsJobSandbox:
 
         self.timeout_seconds = self._timeout_seconds()
 
+        # Azure Container Apps Jobs Start API.
         self.management_api_version = os.getenv(
             "AUTOFORGE_CONTAINER_APPS_API_VERSION",
-            "2025-01-01",
+            "2025-07-01",
         )
 
     # =============================================================
@@ -93,6 +94,7 @@ class ContainerAppsJobSandbox:
         artifacts: dict[str, str],
     ) -> SandboxResult:
 
+        # Every sandbox run gets a unique ID.
         run_id = f"autoforge-{uuid.uuid4().hex}"
 
         contract = {
@@ -114,16 +116,10 @@ class ContainerAppsJobSandbox:
             "timeoutSeconds": self.timeout_seconds,
         }
 
-        contract_blob = (
-            f"{run_id}/contract.json"
-        )
-
-        result_blob = (
-            f"{run_id}/result.json"
-        )
+        contract_blob = f"{run_id}/contract.json"
+        result_blob = f"{run_id}/result.json"
 
         try:
-
             # -----------------------------------------------------
             # 1. Upload contract
             # -----------------------------------------------------
@@ -135,6 +131,10 @@ class ContainerAppsJobSandbox:
 
             # -----------------------------------------------------
             # 2. Start Container Apps Job
+            #
+            # IMPORTANT:
+            # AUTOFORGE_RUN_ID is passed dynamically for this
+            # specific execution.
             # -----------------------------------------------------
 
             await self._start_job(run_id)
@@ -182,7 +182,6 @@ class ContainerAppsJobSandbox:
             return self._parse_result(result)
 
         except Exception as exc:
-
             return SandboxResult(
                 status="failed",
                 summary=(
@@ -199,7 +198,7 @@ class ContainerAppsJobSandbox:
                         file=None,
                         issue=(
                             "Sandbox infrastructure request failed: "
-                            f"{type(exc).__name__}"
+                            f"{type(exc).__name__}: {str(exc)[:1000]}"
                         ),
                         recommendation=(
                             "Inspect Azure Container Apps Job, "
@@ -216,7 +215,6 @@ class ContainerAppsJobSandbox:
 
     @staticmethod
     def _required(name: str) -> str:
-
         value = os.getenv(name, "").strip()
 
         if not value:
@@ -227,7 +225,6 @@ class ContainerAppsJobSandbox:
         return value
 
     def _timeout_seconds(self) -> int:
-
         raw = os.getenv(
             "AUTOFORGE_SANDBOX_TIMEOUT_SECONDS",
             "120",
@@ -235,7 +232,6 @@ class ContainerAppsJobSandbox:
 
         try:
             value = int(raw)
-
         except ValueError as exc:
             raise RuntimeError(
                 "AUTOFORGE_SANDBOX_TIMEOUT_SECONDS "
@@ -252,15 +248,12 @@ class ContainerAppsJobSandbox:
     # =============================================================
 
     def _credential(self):
+        identity_mode = os.getenv(
+            "AUTOFORGE_IDENTITY_MODE",
+            "managed_identity",
+        ).lower()
 
-        if (
-            os.getenv(
-                "AUTOFORGE_IDENTITY_MODE",
-                "managed_identity",
-            ).lower()
-            == "managed_identity"
-        ):
-
+        if identity_mode == "managed_identity":
             client_id = os.getenv(
                 "AZURE_CLIENT_ID"
             )
@@ -279,7 +272,6 @@ class ContainerAppsJobSandbox:
     # =============================================================
 
     def _blob_service_url(self) -> str:
-
         return (
             f"https://{self.storage_account}"
             ".blob.core.windows.net"
@@ -295,14 +287,12 @@ class ContainerAppsJobSandbox:
         credential = self._credential()
 
         try:
-
             service = BlobServiceClient(
                 account_url=self._blob_service_url(),
                 credential=credential,
             )
 
             try:
-
                 container = service.get_container_client(
                     self.storage_container
                 )
@@ -335,14 +325,12 @@ class ContainerAppsJobSandbox:
         credential = self._credential()
 
         try:
-
             service = BlobServiceClient(
                 account_url=self._blob_service_url(),
                 credential=credential,
             )
 
             try:
-
                 container = service.get_container_client(
                     self.storage_container
                 )
@@ -352,9 +340,7 @@ class ContainerAppsJobSandbox:
                 )
 
                 try:
-
                     response = await blob.download_blob()
-
                     content = await response.readall()
 
                 except Exception:
@@ -384,15 +370,20 @@ class ContainerAppsJobSandbox:
         run_id: str,
     ) -> None:
 
-        import httpx
-
         credential = self._credential()
 
         try:
+            # -----------------------------------------------------
+            # Get Azure Resource Manager token
+            # -----------------------------------------------------
 
             token = await credential.get_token(
                 "https://management.azure.com/.default"
             )
+
+            # -----------------------------------------------------
+            # Azure Container Apps Job Start endpoint
+            # -----------------------------------------------------
 
             url = (
                 "https://management.azure.com"
@@ -402,24 +393,31 @@ class ContainerAppsJobSandbox:
                 f"/start?api-version={self.management_api_version}"
             )
 
+            # -----------------------------------------------------
+            # IMPORTANT
+            #
+            # The Start API expects containers directly.
+            #
+            # We dynamically inject AUTOFORGE_RUN_ID for this
+            # execution.
+            # -----------------------------------------------------
+
             payload = {
-                "template": {
-                    "containers": [
-                        {
-                            "name": "autoforge-runner",
-                            "env": [
-                                {
-                                    "name": "AUTOFORGE_JOB_MODE",
-                                    "value": "true",
-                                },
-                                {
-                                    "name": "AUTOFORGE_RUN_ID",
-                                    "value": run_id,
-                                },
-                            ],
-                        }
-                    ]
-                }
+                "containers": [
+                    {
+                        "name": "autoforge-runner",
+                        "env": [
+                            {
+                                "name": "AUTOFORGE_JOB_MODE",
+                                "value": "true",
+                            },
+                            {
+                                "name": "AUTOFORGE_RUN_ID",
+                                "value": run_id,
+                            },
+                        ],
+                    }
+                ]
             }
 
             headers = {
@@ -450,7 +448,7 @@ class ContainerAppsJobSandbox:
                     raise RuntimeError(
                         "Azure Container Apps Job start failed: "
                         f"HTTP {response.status_code} "
-                        f"{response.text[:1000]}"
+                        f"{response.text[:2000]}"
                     )
 
         finally:
@@ -470,7 +468,6 @@ class ContainerAppsJobSandbox:
         max_wait = self.timeout_seconds + 30
 
         interval = 2
-
         elapsed = 0
 
         while elapsed < max_wait:
@@ -551,7 +548,6 @@ class ContainerAppsJobSandbox:
         elif isinstance(raw_checks, dict):
 
             for name, value in raw_checks.items():
-
                 checks[str(name)] = str(value)
 
         raw_findings = data.get(
