@@ -1244,7 +1244,7 @@ class Orchestrator:
             },
         )
 
-        build.status = "Completed"
+        build.status = "Deployed"
         build.stage = "Release"
         build.approval_gate = None
         build.progress = 100
