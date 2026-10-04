@@ -63,6 +63,7 @@ jobs:
       AUTOFORGE_GITHUB_APP_ID: ${{ vars.AUTOFORGE_GITHUB_APP_ID }}
       AUTOFORGE_GITHUB_INSTALLATION_ID: ${{ vars.AUTOFORGE_GITHUB_INSTALLATION_ID }}
       AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64: ${{ secrets.AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64 }}
+      AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN: ${{ secrets.AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +71,10 @@ jobs:
 
       - name: Validate Agent 1 cloud configuration
         run: |
+          if [[ -z "$AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" ]]; then
+            echo "Add AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN as a GitHub Actions secret before enabling generated-app deployment."
+            exit 1
+          fi
           if [[ "$AUTOFORGE_SANDBOX_ENABLED" == "true" && -z "$AUTOFORGE_SANDBOX_ENDPOINT" ]]; then
             echo "Set AUTOFORGE_SANDBOX_ENDPOINT when AUTOFORGE_SANDBOX_ENABLED=true."
             exit 1
@@ -187,6 +192,12 @@ jobs:
             az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
               --set-env-vars AUTOFORGE_GITHUB_PUBLISH_ENABLED=false
           fi
+          az containerapp secret set -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+            --secrets "autoforge-deployment-callback=$AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN"
+          az containerapp update -g "${{ vars.AZURE_RG }}" -n aegis-backend \
+            --set-env-vars \
+              AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN=secretref:autoforge-deployment-callback \
+              AUTOFORGE_DEPLOYMENT_ENABLED=true
           az containerapp update -g ${{ vars.AZURE_RG }} -n aegis-backend \
             --image $REGISTRY/aegis-backend:$IMAGE_TAG
 

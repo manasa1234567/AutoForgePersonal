@@ -1,0 +1,267 @@
+name: Deploy generated app to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - "feature/**"
+    paths:
+      - "generated/**"
+  create:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Existing feature branch to deploy
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: generated-app-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'create' || startsWith(github.ref, 'refs/heads/feature/')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ACA_ENVIRONMENT_NAME: ${{ vars.ACA_ENVIRONMENT_NAME || 'aegis-env' }}
+      ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || 'aegis-rg' }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ vars.ACR_NAME }}.azurecr.io
+      ACA_REGISTRY_IDENTITY: ${{ vars.FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID }}
+      AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN: ${{ secrets.AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN }}
+      DEPLOY_BRANCH: ${{ inputs.branch || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Validate release configuration
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="$DEPLOY_BRANCH"
+          APP_KEY="${BRANCH#feature/}"
+          BUILD_ID="${APP_KEY##*-}"
+          APP_DIR="generated/$APP_KEY"
+          if [[ "$BRANCH" != feature/* || ! "$BUILD_ID" =~ ^[a-f0-9]{8}$ ]]; then
+            echo "Expected a feature/<use-case-slug>-<8-character-build-id> branch; got $BRANCH" >&2
+            exit 1
+          fi
+          if [[ ! -d "$APP_DIR" ]]; then
+            echo "Generated project directory is missing: $APP_DIR" >&2
+            exit 1
+          fi
+          for name in ACR_NAME ACA_REGISTRY_IDENTITY AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions configuration: $name" >&2
+              exit 1
+            fi
+          done
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "app_name=af-$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve backend callback URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_FQDN=$(az containerapp show \
+            --name aegis-backend \
+            --resource-group "$ACA_RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          if [[ -z "$BACKEND_FQDN" || "$BACKEND_FQDN" == "None" ]]; then
+            echo "Could not find the aegis-backend Container App ingress." >&2
+            exit 1
+          fi
+          echo "BACKEND_URL=https://$BACKEND_FQDN" >> "$GITHUB_ENV"
+
+      - name: Build generated project image
+        id: image
+        shell: bash
+        env:
+          APP_DIR: ${{ steps.config.outputs.app_dir }}
+          BUILD_ID: ${{ steps.config.outputs.build_id }}
+        run: |
+          set -euo pipefail
+          if find "$APP_DIR" -type f \( -name pom.xml -o -name requirements.txt -o -name pyproject.toml -o -name go.mod \) \
+              -not -path '*/tests/*' -print -quit | grep -q . && [[ ! -f "$APP_DIR/Dockerfile" ]]; then
+            echo "This generated project includes a backend service but no root Dockerfile. Add a Dockerfile that packages the approved runtime before deploying; refusing to publish only its frontend." >&2
+            exit 1
+          fi
+
+          CONTEXT="$APP_DIR"
+          PORT=8080
+          if [[ -f "$APP_DIR/Dockerfile" ]]; then
+            PORT=$(awk 'toupper($1)=="EXPOSE" {gsub(/\/tcp|\/udp/, "", $2); print $2; exit}' "$APP_DIR/Dockerfile" | grep -E '^[0-9]+$' || true)
+            PORT="${PORT:-8080}"
+          elif [[ -f "$APP_DIR/package.json" ]] && jq -e '.scripts.build' "$APP_DIR/package.json" >/dev/null; then
+            cat > "$APP_DIR/.autoforge.Dockerfile" <<'DOCKER'
+          FROM node:22-alpine AS build
+          WORKDIR /src
+          COPY . .
+          RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi \
+              && npm run build \
+              && output="$(find dist build -type f -name index.html 2>/dev/null | head -n 1 || true)" \
+              && test -n "$output" \
+              && mkdir -p /site \
+              && cp -a "$(dirname "$output")"/. /site/
+          FROM nginx:1.27-alpine
+          COPY --from=build /site/ /usr/share/nginx/html/
+          RUN printf 'server {\n  listen 8080;\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+          EXPOSE 8080
+          DOCKER
+            DOCKERFILE="$APP_DIR/.autoforge.Dockerfile"
+          elif [[ -f "$APP_DIR/package.json" ]] && jq -e '.scripts.start' "$APP_DIR/package.json" >/dev/null; then
+            cat > "$APP_DIR/.autoforge.Dockerfile" <<'DOCKER'
+          FROM node:22-alpine
+          WORKDIR /app
+          COPY . .
+          RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+          ENV PORT=8080 HOST=0.0.0.0
+          EXPOSE 8080
+          CMD ["npm", "start"]
+          DOCKER
+            DOCKERFILE="$APP_DIR/.autoforge.Dockerfile"
+          else
+            INDEX=$(find "$APP_DIR" -type f -name index.html \
+              -not -path '*/tests/*' -not -path '*/__tests__/*' -not -path '*/node_modules/*' -print -quit)
+            if [[ -z "$INDEX" ]]; then
+              echo "No root Dockerfile, buildable package.json, or static index.html was found. Add a project Dockerfile to define how this approved stack should run." >&2
+              exit 1
+            fi
+            WEB_ROOT=$(dirname "$INDEX")
+            CONTEXT="$RUNNER_TEMP/autoforge-static"
+            mkdir -p "$CONTEXT/site"
+            while IFS= read -r -d '' FILE; do
+              RELATIVE="${FILE#"$WEB_ROOT"/}"
+              mkdir -p "$CONTEXT/site/$(dirname "$RELATIVE")"
+              cp "$FILE" "$CONTEXT/site/$RELATIVE"
+            done < <(find "$WEB_ROOT" -type f \
+              \( -iname '*.html' -o -iname '*.css' -o -iname '*.js' -o -iname '*.mjs' \
+                 -o -iname '*.json' -o -iname '*.svg' -o -iname '*.png' -o -iname '*.jpg' \
+                 -o -iname '*.jpeg' -o -iname '*.webp' -o -iname '*.ico' \
+                 -o -iname '*.woff' -o -iname '*.woff2' \) \
+              -not -path '*/tests/*' -not -path '*/__tests__/*' -not -path '*/node_modules/*' -print0)
+            cat > "$CONTEXT/Dockerfile" <<'DOCKER'
+          FROM nginx:1.27-alpine
+          COPY site/ /usr/share/nginx/html/
+          RUN printf 'server {\n  listen 8080;\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+          EXPOSE 8080
+          DOCKER
+            DOCKERFILE="$CONTEXT/Dockerfile"
+          fi
+
+          IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID"
+          az acr login --name "$ACR_NAME"
+          docker build --file "$DOCKERFILE" --tag "$IMAGE" "$CONTEXT"
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "port=$PORT" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update generated Container App
+        id: app
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          PORT: ${{ steps.image.outputs.port }}
+          APP_NAME: ${{ steps.config.outputs.app_name }}
+        run: |
+          set -euo pipefail
+          if az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" >/dev/null 2>&1; then
+            az containerapp identity assign --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --user-assigned "$ACA_REGISTRY_IDENTITY" --output none
+            az containerapp registry set --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --server "$ACR_LOGIN_SERVER" --identity "$ACA_REGISTRY_IDENTITY" --output none
+            az containerapp update --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --image "$IMAGE" --set-env-vars PORT="$PORT" --output none
+            az containerapp ingress update --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --target-port "$PORT" --transport http --output none
+          else
+            az containerapp create --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+              --environment "$ACA_ENVIRONMENT_NAME" --image "$IMAGE" \
+              --ingress external --target-port "$PORT" --transport http \
+              --registry-server "$ACR_LOGIN_SERVER" --registry-identity "$ACA_REGISTRY_IDENTITY" \
+              --user-assigned "$ACA_REGISTRY_IDENTITY" --min-replicas 0 --max-replicas 1 \
+              --cpu 0.25 --memory 0.5Gi --env-vars PORT="$PORT" --output none
+          fi
+          FQDN=$(az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          if [[ -z "$FQDN" || "$FQDN" == "None" ]]; then
+            echo "Azure did not return an ingress hostname for $APP_NAME." >&2
+            exit 1
+          fi
+          echo "app_url=https://$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test deployed application
+        env:
+          APP_URL: ${{ steps.app.outputs.app_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            STATUS=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$APP_URL/" || true)
+            echo "Smoke test $attempt: HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then exit 0; fi
+            sleep 10
+          done
+          echo "Generated application did not return HTTP 200 from $APP_URL." >&2
+          exit 1
+
+      - name: Report successful deployment to AutoForge
+        if: success()
+        env:
+          BUILD_ID: ${{ steps.config.outputs.build_id }}
+          APP_URL: ${{ steps.app.outputs.app_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=$(jq -n --arg branch "$DEPLOY_BRANCH" --arg url "$APP_URL" \
+            '{branch:$branch,status:"succeeded",url:$url}')
+          for attempt in {1..12}; do
+            STATUS=$(curl -sS --max-time 20 -o "$RUNNER_TEMP/callback.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
+              -H 'Content-Type: application/json' -X POST \
+              --data "$BODY" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true)
+            if [[ "$STATUS" == "200" ]]; then
+              echo "AutoForge recorded the deployed application URL."
+              exit 0
+            fi
+            echo "Waiting for AutoForge to record the feature branch (callback HTTP $STATUS)."
+            sleep 10
+          done
+          echo "Could not report deployment status to AutoForge; see $APP_URL in this workflow run." >&2
+          exit 1
+
+      - name: Report failed deployment to AutoForge
+        if: failure() && env.AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN != ''
+        env:
+          BUILD_ID: ${{ steps.config.outputs.build_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${BACKEND_URL:-}" && -n "${BUILD_ID:-}" ]] || exit 0
+          BODY=$(jq -n --arg branch "$DEPLOY_BRANCH" \
+            --arg message "Generated-app deployment failed. Open the Deploy generated app to Azure Container Apps workflow run for details." \
+            '{branch:$branch,status:"failed",message:$message}')
+          for attempt in {1..6}; do
+            STATUS=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
+              -H 'Content-Type: application/json' -X POST \
+              --data "$BODY" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true)
+            [[ "$STATUS" == "200" ]] && exit 0
+            sleep 10
+          done
+          echo "Could not report the deployment failure to AutoForge." >&2

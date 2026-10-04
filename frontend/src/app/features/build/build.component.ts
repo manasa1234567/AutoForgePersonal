@@ -104,6 +104,8 @@ export class BuildComponent implements OnInit {
         (build) =>
           build.status !== 'Awaiting Approval' &&
           build.status !== 'Blocked' &&
+          build.status !== 'Failed' &&
+          build.status !== 'Deployed' &&
           build.stage !== 'Error' &&
           build.status !== 'Completed',
         true,

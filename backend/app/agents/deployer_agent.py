@@ -85,12 +85,12 @@ class DeployerAgent:
         if identity_mode != "managed_identity":
             blockers.append("Azure deployment must use the provisioned managed identity.")
 
-        checks["deployment_adapter"] = "Not implemented; deployment disabled"
-        blockers.append("The Azure Container Apps deployment adapter is not implemented yet.")
         deploy_enabled = os.getenv("AUTOFORGE_DEPLOYMENT_ENABLED", "false").lower() == "true"
         checks["deployment_enabled"] = "Enabled" if deploy_enabled else "Disabled"
         if not deploy_enabled:
             blockers.append("Deployment remains disabled by AUTOFORGE_DEPLOYMENT_ENABLED.")
+        else:
+            checks["deployment_adapter"] = "GitHub Actions generated-app workflow configured"
 
         target = build.blueprint.deployment if build.blueprint else "Not specified in approved blueprint"
         unique_blockers = list(dict.fromkeys(blockers))

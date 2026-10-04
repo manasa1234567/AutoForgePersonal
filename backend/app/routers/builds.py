@@ -1,11 +1,14 @@
 from io import BytesIO
+import hmac
+import os
 import re
 import zipfile
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, RefineRequest
+from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, DeploymentCallback, RefineRequest
 from ..services.orchestrator import Orchestrator
 
 router = APIRouter(prefix="/api/builds", tags=["builds"])
@@ -125,3 +128,25 @@ async def prepare_build_deployment(build_id: str):
         return store.get(build_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{build_id}/deployment-callback")
+async def record_deployment_callback(
+    build_id: str,
+    payload: DeploymentCallback,
+    authorization: str | None = Header(default=None),
+):
+    expected = os.getenv("AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN", "")
+    supplied = authorization.removeprefix("Bearer ") if authorization else ""
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid deployment callback credentials")
+    if payload.status == "succeeded":
+        parsed = urlparse(payload.url or "")
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise HTTPException(status_code=422, detail="A valid HTTPS URL is required for successful deployment")
+    try:
+        return store.record_deployment(build_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Build not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

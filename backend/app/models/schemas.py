@@ -249,6 +249,13 @@ class DeploymentPlan(ApiModel):
     artifact_manifest: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DeploymentCallback(ApiModel):
+    branch: str
+    status: Literal["succeeded", "failed"]
+    url: str | None = None
+    message: str = ""
+
+
 class BuildMetrics(ApiModel):
     tokens: int = 0
     tool_calls: int = 0
@@ -292,6 +299,7 @@ class BuildState(ApiModel):
     feature_branch_url: str | None = None
     repository_url: str | None = None
     deployed_url: str | None = None
+    deployment_status: Literal["not_started", "running", "succeeded", "failed"] = "not_started"
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)

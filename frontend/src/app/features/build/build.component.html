@@ -233,9 +233,11 @@
               <div class="target-card"><span>RELEASE</span><strong>{{ currentBuild.featureBranch ? 'Source published' : (currentBuild.status === 'Completed' ? 'Release complete' : 'Awaiting approval') }}</strong>
                 @if (currentBuild.featureBranchUrl) { <p>Feature branch: <a [href]="currentBuild.featureBranchUrl" target="_blank" rel="noopener noreferrer">{{ currentBuild.featureBranch }}</a></p> }
                 @if (currentBuild.deployedUrl) { <p>Live application: <a [href]="currentBuild.deployedUrl" target="_blank" rel="noopener noreferrer">Open deployed application</a></p> }
-                @else { <p>{{ currentBuild.featureBranch ? 'The reviewed source is committed to GitHub. Azure Container Apps deployment is not connected yet, so a live URL is not available.' : 'After approval, reviewed source will be committed to a new feature branch. Azure deployment requires a generated-app build workflow.' }}</p> }
+                @else if (currentBuild.deploymentStatus === 'running') { <p>Source is published. Azure Container Apps is building and deploying this application. This page will update when deployment finishes.</p> }
+                @else if (currentBuild.deploymentStatus === 'failed') { <p>Azure deployment failed. Check the build timeline for the deployment error and open the feature branch to inspect the generated source.</p> }
+                @else { <p>{{ currentBuild.featureBranch ? 'The reviewed source is committed to GitHub. Azure Container Apps deployment is starting.' : 'After approval, reviewed source will be committed to a new feature branch and deployed to Azure Container Apps.' }}</p> }
               </div>
-              @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('release')">{{ approvingGate === 'release' ? 'Approving…' : 'Approve and Publish to GitHub' }}</button></div> }
+              @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('release')">{{ approvingGate === 'release' ? 'Approving…' : 'Approve and Deploy' }}</button></div> }
             </div>
           }
 

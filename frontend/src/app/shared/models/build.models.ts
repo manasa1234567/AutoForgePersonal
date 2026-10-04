@@ -196,6 +196,7 @@ export interface BuildState {
   featureBranchUrl: string | null;
   repositoryUrl: string | null;
   deployedUrl: string | null;
+  deploymentStatus: 'not_started' | 'running' | 'succeeded' | 'failed';
   skillProposal: SkillProposal | null;
   skillsUsed: SkillUsage[];
   agents: AgentState[];

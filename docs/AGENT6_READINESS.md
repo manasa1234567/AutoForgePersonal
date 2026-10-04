@@ -1,46 +1,30 @@
-# Agent 6: Deployer Agent readiness
+# Agent 6: generated application deployment
 
-## Implemented locally
+## Release flow
 
-The Deployer Agent now has a local preflight exposed from the Prove workspace as **Prepare Deployment Plan** and through `POST /api/builds/{buildId}/deployment-preflight`. It creates a source manifest with relative paths, UTF-8 byte sizes, and SHA-256 hashes; checks artifact bounds; records Critic runtime validation and Security Reviewer results; reports missing external scans; and verifies the Azure target configuration and managed-identity mode. The plan requires a separate human approval before deployment.
+After the human approves release, AutoForge publishes reviewed files to a new `feature/<use-case-slug>-<8-character-build-id>` branch under `generated/<use-case-slug>-<build-id>/`. The branch creation event and later pushes to its generated source start `.github/workflows/deploy-generated-app.yml`.
 
-The Settings page now shows a deployment setup checklist for the agreed GitHub repository (`manasa1234567/AutoForgePersonal`) and Azure Container Apps target. `GET /api/integrations/deployment-status` reports whether server-side settings exist without returning their values. The UI includes steps to find an ACA environment and create a least-privilege GitHub App. This is diagnostic/setup guidance only; it does not create cloud resources or publish code.
+The workflow builds and pushes an image to ACR, creates or updates a per-build Azure Container App in `aegis-env` / `aegis-rg`, enables external HTTPS ingress, smoke-checks the app, and sends an authenticated callback to the backend. The callback updates the build to `Deployed`, stores the live URL, and adds an audit event. A deployment error marks the build `Failed` and is recorded in the timeline. The build page polls while deployment is running and displays **Open deployed application** after success.
 
-The user confirmed the existing preview environment is `aegis-env` in resource group `aegis-rg` (Central India), under subscription `38dff143-17bc-4230-b3a9-133d5af58186`. The backend example now records the confirmed environment and resource-group names; keep subscription and credentials in deployment configuration rather than committing them as application defaults.
+Supported project layouts are a root `Dockerfile`, a Node package with a build or start script, or a static project containing `index.html`. A project containing common backend manifests must provide a root `Dockerfile`; the workflow fails rather than silently deploying only its frontend. This workflow does not run dependency vulnerability scans or Azure Policy checks, and it does not implement automatic cleanup of per-build apps.
 
-The Azure CD workflow now passes the confirmed ACA environment/resource group, subscription ID, ACR login server, and repository owner/name to the backend as runtime configuration. `AUTOFORGE_DEPLOYMENT_ENABLED` is deliberately kept `false`.
+## GitHub Actions setup
 
-On release approval, the backend can use a GitHub App installation token to create a commit and a new `feature/<use-case-slug>-<build-id>` branch without writing to the base branch. Generated files are placed under `generated/<use-case-slug>-<build-id>/` to avoid overwriting the AutoForge platform source. The UI shows the branch link. Publishing is opt-in with `AUTOFORGE_GITHUB_PUBLISH_ENABLED=true`; the private key is stored as a Container App secret by CD. The GitHub App needs Contents read/write on the target repository. Pull request permission is not used.
+The `production` GitHub Environment must contain these secrets and allow deployment from feature branches:
 
-The public workspace currently has no user authentication. Do not enable GitHub publishing on an internet-accessible deployment until release approvals are authenticated; otherwise an unauthenticated caller could ask the backend to create branches in the configured repository.
+- `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` for the existing OIDC federated credential.
+- `AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN`, a long random value shared with the backend through the Container App secret reference.
 
-Preflight never builds or runs generated code and never contacts Azure. It saves a structured report and an audit event. Missing prerequisites are listed as blockers. `AzureAdapters.deploy()` now fails closed instead of returning a made-up Container App URL, and the orchestrator does not mark a build deployed or smoke-tested without a real adapter result.
+The existing environment/repository Actions variables must include `ACA_ENVIRONMENT_NAME=aegis-env`, `ACA_RESOURCE_GROUP=aegis-rg`, `ACR_NAME=aegisacr20500`, and `FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID` set to the full resource ID of `aegis-forge-mi`.
 
-## Local configuration
+The OIDC principal used by Actions needs permission to push images to ACR and create/update Container Apps in `aegis-rg`. The user-assigned identity used by the generated Container Apps needs the **AcrPull** role on the registry. The existing backend identity also needs permission to access the callback route; the callback token is passed as a Container App secret by `CD - Azure`.
 
-The backend `.env.example` lists the infrastructure values used by preflight:
+After this workflow is merged to the repository's default branch and `CD - Azure` succeeds, newly published feature branches deploy automatically. To deploy an existing feature branch, run **Deploy generated app to Azure Container Apps** manually and enter its branch name.
 
-- `AUTOFORGE_DEPLOYMENT_ENABLED` defaults to `false` and remains only a safety gate.
-- `AUTOFORGE_GITHUB_PUBLISH_ENABLED` defaults to `false`; enable only after release approval is protected by application authentication.
-- `AZURE_SUBSCRIPTION_ID`
-- `AZURE_RESOURCE_GROUP`
-- `ACR_LOGIN_SERVER`
-- `ACA_ENVIRONMENT_NAME`
-- `ACA_RESOURCE_GROUP`
-- `AUTOFORGE_IDENTITY_MODE=managed_identity` for the Azure worker.
-- `AUTOFORGE_GITHUB_OWNER`
-- `AUTOFORGE_GITHUB_REPOSITORY`
-- `AUTOFORGE_GITHUB_BASE_BRANCH` (optional; otherwise the repository default branch is read, never written)
-- `AUTOFORGE_GITHUB_APP_ID`
-- `AUTOFORGE_GITHUB_INSTALLATION_ID`
-- `AUTOFORGE_GITHUB_APP_PRIVATE_KEY_BASE64` (secret; preferably supplied from Key Vault)
+## Operational and security limits
 
-Filling these values does not enable deployment. The Azure deployment adapter is intentionally not implemented until the provisioned subscription, identities, security scanners, and target environment can be integrated and reviewed.
+Generated apps use public HTTPS ingress so the returned URL can be opened directly. They scale to zero and are limited to one replica, but each build creates a separate Container App and image; remove apps/images that are no longer needed to control resource use. Treat generated applications as publicly accessible unless authentication is part of the generated app itself.
 
-To try the local Deployer Agent, start the app, create a build, and proceed until generated artifacts appear in Prove. Run the Security Reviewer, then click **Prepare Deployment Plan**. The UI shows gate statuses, blockers, target, candidate image tag, and artifact hashes. Local preflight is expected to be blocked before Azure setup.
+The deployment callback requires `Authorization: Bearer <AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN>`, verifies successful URLs use HTTPS, and rejects callbacks whose feature branch does not match the build. Do not log or commit the callback token.
 
-## Azure work remaining
-
-The generated application pipeline still needs a build strategy for supported project types, an idempotent image build in ACR, vulnerability scanning and policy enforcement, isolated per-build Container Apps deployment, a deployment callback/status poll, smoke tests, and rollback on failed verification. Persist operation IDs and outputs for retries, handle timeouts without claiming success, and audit every state change. Do not run shell commands derived from generated artifacts inside the backend. No generated app deployment, URL, image scan, smoke test, or rollback has been verified in Azure.
-
-**Readiness:** GitHub feature-branch publishing is implemented but opt-in and requires GitHub App credentials. It has not been exercised against GitHub. Azure generated-app image build, deploy, smoke test, and rollback remain pending; the UI must not show a live URL until these steps return verified evidence. Agent 6 is not production deployment-ready.
+The workflow implementation has been added to the repository. Actual Azure deployment still depends on the GitHub Environment, OIDC, ACR, managed identity role assignments, and a successful `CD - Azure` run. The first end-to-end success is confirmed only when the workflow completes and the build page shows the deployed URL.

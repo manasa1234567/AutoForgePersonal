@@ -29,6 +29,7 @@ async def deployment_status() -> dict[str, object]:
         "container_apps_environment": _configured("ACA_ENVIRONMENT_NAME") and _configured("ACA_RESOURCE_GROUP"),
         "managed_identity": os.getenv("AUTOFORGE_IDENTITY_MODE", "").lower() == "managed_identity",
         "deployment_enabled": os.getenv("AUTOFORGE_DEPLOYMENT_ENABLED", "false").lower() == "true",
+        "deployment_callback_configured": _configured("AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN"),
     }
     runtime = {
         "isolated_validation": os.getenv("AUTOFORGE_SANDBOX_ENABLED", "false").lower() == "true"
@@ -44,6 +45,6 @@ async def deployment_status() -> dict[str, object]:
         "validation": runtime,
         "branchPattern": "feature/<use-case-slug>-<build-id>",
         "branchPublishingImplemented": True,
-        "deploymentImplemented": False,
-        "note": "After release approval, reviewed artifacts can be committed to a new feature branch. Azure app packaging/deployment and returning a live URL are still pending.",
+        "deploymentImplemented": True,
+        "note": "After release approval, reviewed artifacts are committed to a feature branch. GitHub Actions builds supported generated projects, deploys them to Azure Container Apps, smoke-checks the public URL, and reports the result to the build timeline.",
     }

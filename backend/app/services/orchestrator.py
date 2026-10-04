@@ -11,6 +11,7 @@ from ..models.schemas import (
     BuildCreate,
     BuildState,
     BlueprintUpdate,
+    DeploymentCallback,
     DeploymentPlan,
     ProofResult,
     SecurityReview,
@@ -1139,6 +1140,43 @@ class Orchestrator:
     # RELEASE PUBLICATION
     # ============================================================
 
+    def record_deployment(self, build_id: str, callback: DeploymentCallback) -> BuildState:
+        build = self.get(build_id)
+        if build.feature_branch != callback.branch:
+            raise ValueError("The deployment callback branch does not match the published build branch yet.")
+        if callback.status == "succeeded":
+            if not callback.url:
+                raise ValueError("A successful deployment callback must include its application URL.")
+            build.deployment_status = "succeeded"
+            build.deployed_url = callback.url
+            build.status = "Deployed"
+            build.progress = 100
+            build.error = None
+            self._set_agent(build, "Deployer Agent", "Ready", "Application deployed and smoke test passed")
+            self._add_event(
+                build,
+                "Deployment",
+                "Generated application deployed to Azure Container Apps and passed its smoke test",
+                "Deployer Agent",
+                metadata={"url": callback.url, "branch": callback.branch},
+            )
+        else:
+            message = callback.message.strip()[:1000] or "Generated application deployment failed."
+            build.deployment_status = "failed"
+            build.status = "Failed"
+            build.error = message
+            self._set_agent(build, "Deployer Agent", "Failed", message)
+            self._add_event(
+                build,
+                "Deployment",
+                message,
+                "Deployer Agent",
+                severity="error",
+                metadata={"branch": callback.branch},
+            )
+        self._build_repository.save(build)
+        return build
+
     async def _deploy(self, build: BuildState) -> None:
         build.stage = "Release"
         build.progress = 95
@@ -1164,7 +1202,7 @@ class Orchestrator:
         build.feature_branch_url = published["branch_url"]
         build.repository_url = published["repository_url"]
 
-        self._set_agent(build, "Deployer Agent", "Ready", f"Reviewed source published to {build.feature_branch}")
+        self._set_agent(build, "Deployer Agent", "Running", f"Deploying {build.feature_branch} to Azure Container Apps")
         self._add_event(
             build,
             "GitHub Publish",
@@ -1173,19 +1211,20 @@ class Orchestrator:
             metadata={"branch": build.feature_branch, "branch_url": build.feature_branch_url, "commit": published["commit_sha"]},
         )
 
-        # Publishing is real. ACA deployment is intentionally left pending until
-        # a generated-app build/deploy workflow can produce and verify a live URL.
+        # Feature-branch push triggers the generated-app deployment workflow.
+        # It reports a verified URL through the authenticated callback endpoint.
         build.stage = "Release"
         build.approval_gate = None
-        build.progress = 100
+        build.deployment_status = "running"
+        build.progress = 96
         build.error = None
-        build.status = "Completed"
+        build.status = "Running"
         self._add_event(
             build,
-            "Deployment Pending",
-            "Source is published. Azure deployment has not run, so no live application URL is available yet.",
+            "Deployment Started",
+            "Source is published. Azure Container Apps is building and deploying the generated application.",
             "Deployer Agent",
-            severity="warning",
+            metadata={"branch": build.feature_branch},
         )
 
         self._build_repository.save(build)
