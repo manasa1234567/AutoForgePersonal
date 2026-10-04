@@ -106,7 +106,7 @@ class CoderAgent:
             )
             response = await agent.run(json.dumps(context, ensure_ascii=False))
             data = SpecAgent._parse_json_response(str(response))
-            files = self._validate_files(data)
+            files = self._ensure_react_entrypoint(self._validate_files(data))
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
             skills_used: list[SkillUsage] = []
@@ -180,6 +180,63 @@ class CoderAgent:
         if sum(len(content.encode("utf-8")) for content in files.values()) > cls.max_total_bytes:
             raise ValueError("Coder Agent output exceeds the total source size limit")
         return files
+
+    @classmethod
+    def _ensure_react_entrypoint(cls, files: dict[str, str]) -> dict[str, str]:
+        """Complete component-only React output with a minimal Vite entrypoint."""
+        app_path = next(
+            (
+                path for path in files
+                if re.search(r"(?:^|/)src/App\.(?:tsx|jsx)$", path, flags=re.IGNORECASE)
+            ),
+            None,
+        )
+        if app_path is None:
+            return files
+
+        normalized = app_path.replace("\\", "/")
+        root = normalized.rsplit("/src/", 1)[0] if "/src/" in normalized else ""
+        prefix = f"{root}/" if root else ""
+        extension = "tsx" if normalized.lower().endswith(".tsx") else "jsx"
+        completed = dict(files)
+        completed.setdefault(
+            f"{prefix}package.json",
+            json.dumps(
+                {
+                    "name": "autoforge-generated-app",
+                    "private": True,
+                    "version": "1.0.0",
+                    "type": "module",
+                    "scripts": {"build": "vite build", "start": "vite --host 0.0.0.0"},
+                    "dependencies": {
+                        "@vitejs/plugin-react": "latest",
+                        "vite": "latest",
+                        "typescript": "latest",
+                        "react": "latest",
+                        "react-dom": "latest",
+                    },
+                    "devDependencies": {},
+                },
+                indent=2,
+            ),
+        )
+        completed.setdefault(
+            f"{prefix}index.html",
+            '<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AutoForge Application</title></head><body><div id="root"></div><script type="module" src="/src/main.%s"></script></body></html>\n' % extension,
+        )
+        completed.setdefault(
+            f"{prefix}src/main.{extension}",
+            (
+                'import React from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./App";\n\ncreateRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);\n'
+                if extension == "tsx"
+                else 'import React from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./App";\n\ncreateRoot(document.getElementById("root")).render(<React.StrictMode><App /></React.StrictMode>);\n'
+            ),
+        )
+        if len(completed) > cls.max_files:
+            raise ValueError("Coder Agent output cannot be completed within the artifact file limit")
+        if sum(len(content.encode("utf-8")) for content in completed.values()) > cls.max_total_bytes:
+            raise ValueError("Coder Agent output cannot be completed within the artifact size limit")
+        return completed
 
     @staticmethod
     def _local_scaffold(*, title: str, blueprint: Blueprint, requirements: list[dict[str, Any]]) -> CoderResult:
@@ -262,4 +319,4 @@ export class AppComponent {{
             "This is not a complete production implementation.\n\n"
             f"Frontend: {blueprint.frontend}\n\nBackend: {blueprint.backend}\n"
         )
-        return CoderResult(files=files, mode="local-scaffold")
+        return CoderResult(files=CoderAgent._ensure_react_entrypoint(files), mode="local-scaffold")
