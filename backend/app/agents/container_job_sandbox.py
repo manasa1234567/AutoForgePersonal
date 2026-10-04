@@ -47,13 +47,27 @@ class ContainerAppsJobSandbox:
            |
            v
         Backend
+
+    The sandbox runner uses a dedicated User Assigned Managed Identity:
+
+        af-sandbox-identity
+
+    The client ID of that identity is passed explicitly to the runner
+    through AZURE_CLIENT_ID.
     """
 
     def __init__(self) -> None:
+        # ---------------------------------------------------------
+        # Azure subscription
+        # ---------------------------------------------------------
 
         self.subscription_id = self._required(
             "AZURE_SUBSCRIPTION_ID"
         )
+
+        # ---------------------------------------------------------
+        # Container Apps Job configuration
+        # ---------------------------------------------------------
 
         self.resource_group = os.getenv(
             "AUTOFORGE_SANDBOX_RESOURCE_GROUP",
@@ -65,6 +79,28 @@ class ContainerAppsJobSandbox:
             "af-sandbox-job",
         )
 
+        # ---------------------------------------------------------
+        # Sandbox runner image
+        # ---------------------------------------------------------
+
+        self.sandbox_image = os.getenv(
+            "AUTOFORGE_SANDBOX_IMAGE",
+            "afregistry5usl4p.azurecr.io/autoforge-runner:2.0",
+        )
+
+        # ---------------------------------------------------------
+        # Sandbox User Assigned Managed Identity
+        # ---------------------------------------------------------
+
+        self.sandbox_client_id = os.getenv(
+            "AUTOFORGE_SANDBOX_CLIENT_ID",
+            "8f766fd2-5089-4f7e-90ea-d6a39ac7635d",
+        )
+
+        # ---------------------------------------------------------
+        # Blob Storage
+        # ---------------------------------------------------------
+
         self.storage_account = os.getenv(
             "AUTOFORGE_SANDBOX_STORAGE_ACCOUNT",
             "afstorage5usl4p",
@@ -72,12 +108,22 @@ class ContainerAppsJobSandbox:
 
         self.storage_container = os.getenv(
             "AUTOFORGE_SANDBOX_STORAGE_CONTAINER",
-            "sandbox-runs",
+            os.getenv(
+                "AUTOFORGE_SANDBOX_CONTAINER",
+                "sandbox-runs",
+            ),
         )
+
+        # ---------------------------------------------------------
+        # Timeout
+        # ---------------------------------------------------------
 
         self.timeout_seconds = self._timeout_seconds()
 
-        # Azure Container Apps Jobs Start API.
+        # ---------------------------------------------------------
+        # Azure Container Apps Jobs Start API
+        # ---------------------------------------------------------
+
         self.management_api_version = os.getenv(
             "AUTOFORGE_CONTAINER_APPS_API_VERSION",
             "2025-07-01",
@@ -135,11 +181,6 @@ class ContainerAppsJobSandbox:
 
             # -----------------------------------------------------
             # 2. Start Container Apps Job
-            # -----------------------------------------------------
-            #
-            # IMPORTANT:
-            # AUTOFORGE_RUN_ID is passed dynamically for this
-            # specific execution.
             # -----------------------------------------------------
 
             await self._start_job(run_id)
@@ -226,7 +267,7 @@ class ContainerAppsJobSandbox:
 
         value = os.getenv(
             name,
-            ""
+            "",
         ).strip()
 
         if not value:
@@ -430,16 +471,19 @@ class ContainerAppsJobSandbox:
             # -----------------------------------------------------
             # IMPORTANT
             #
-            # The Start API expects containers directly.
+            # The Start API requires the container image when
+            # overriding the container configuration.
             #
-            # We dynamically inject AUTOFORGE_RUN_ID for this
-            # execution.
+            # We also explicitly provide AZURE_CLIENT_ID so the
+            # sandbox runner knows which User Assigned Managed
+            # Identity to use.
             # -----------------------------------------------------
 
             payload = {
                 "containers": [
                     {
                         "name": "autoforge-runner",
+                        "image": self.sandbox_image,
                         "env": [
                             {
                                 "name": "AUTOFORGE_JOB_MODE",
@@ -448,6 +492,10 @@ class ContainerAppsJobSandbox:
                             {
                                 "name": "AUTOFORGE_RUN_ID",
                                 "value": run_id,
+                            },
+                            {
+                                "name": "AZURE_CLIENT_ID",
+                                "value": self.sandbox_client_id,
                             },
                         ],
                     }
