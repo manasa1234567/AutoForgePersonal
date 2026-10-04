@@ -14,6 +14,7 @@ except ImportError:  # YAML review is optional for environments without PyYAML.
 
 from ..models.schemas import Blueprint, CriticFinding, SkillRecipe
 from .artifact_limits import MAX_ARTIFACT_FILES, MAX_ARTIFACT_FILE_BYTES, MAX_ARTIFACT_TOTAL_BYTES
+from .container_job_sandbox import ContainerAppsJobSandbox
 from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .spec_agent import SpecAgent
 
@@ -113,13 +114,24 @@ class CriticAgent:
                 mode=result.mode,
             )
 
-        sandbox = await DynamicSessionsSandbox().validate(
-            title=title,
-            blueprint=blueprint,
-            requirements=requirements,
-            acceptance_criteria=acceptance_criteria,
-            artifacts=artifacts,
-        )
+        sandbox_mode = os.getenv("AUTOFORGE_SANDBOX_MODE", "container_job").strip().lower()
+        sandbox_args = {
+            "title": title,
+            "blueprint": blueprint,
+            "requirements": requirements,
+            "acceptance_criteria": acceptance_criteria,
+            "artifacts": artifacts,
+        }
+        if sandbox_mode == "container_job":
+            sandbox = await ContainerAppsJobSandbox().validate(**sandbox_args)
+            runtime_mode = "azure-container-apps-job"
+        elif sandbox_mode == "dynamic_sessions":
+            sandbox = await DynamicSessionsSandbox().validate(**sandbox_args)
+            runtime_mode = "azure-container-apps-custom-session"
+        else:
+            raise RuntimeError(
+                "Unsupported AUTOFORGE_SANDBOX_MODE. Use 'container_job' or 'dynamic_sessions'."
+            )
         runtime_checks = {f"sandbox_{name}": value for name, value in sandbox.checks.items()}
         return CriticResult(
             summary=result.summary + " " + sandbox.summary,
@@ -128,7 +140,7 @@ class CriticAgent:
             test_plan=result.test_plan,
             checks={**result.checks, **runtime_checks},
             runtime_status=f"{sandbox.status.capitalize()}: {sandbox.summary}",
-            mode=result.mode + "+azure-container-apps-custom-session",
+            mode=result.mode + f"+{runtime_mode}",
         )
 
     def _local_checks(self, artifacts: dict[str, str]) -> tuple[list[CriticFinding], dict[str, str]]:

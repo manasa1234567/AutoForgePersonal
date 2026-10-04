@@ -316,11 +316,17 @@ class Orchestrator:
             self._record_skill_retrieval(build, critic_recipes, "Critic Agent")
         repair_limit = 2
         for attempt in range(1, repair_limit + 1):
+            infrastructure_failure = any(
+                name in {"sandbox_job_execution", "sandbox_result_available"}
+                and value.lower().startswith("failed")
+                for name, value in result.checks.items()
+            )
             if (
                 not result.runtime_status.lower().startswith("failed")
                 or not result.mode.startswith("foundry-static-review")
                 or build.proof.generator_mode != "foundry-agent"
                 or os.getenv("AUTOFORGE_SANDBOX_ENABLED", "false").lower() != "true"
+                or infrastructure_failure
             ):
                 break
             self._set_agent(build, "Coder Agent", "Running", f"Repair attempt {attempt} of {repair_limit} from Critic findings")
