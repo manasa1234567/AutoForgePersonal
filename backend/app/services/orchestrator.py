@@ -1343,6 +1343,10 @@ class Orchestrator:
         elif gate == "artifacts":
             try:
                 await self._prove(build)
+                # _prove can enter _security(), which persists through its own
+                # repository load. Keep that completed state instead of saving
+                # this pre-review snapshot at the end of this task.
+                build = self.get(build_id)
 
             except Exception as exc:
                 self._fail(build, str(exc))
@@ -1372,6 +1376,10 @@ class Orchestrator:
 
             try:
                 await self._security(build)
+                # _security refreshes and saves the build after its review.
+                # Reload it before the common save below so the review result,
+                # final status, and approval gate are not replaced by stale data.
+                build = self.get(build_id)
 
             except Exception as exc:
                 self._fail(build, str(exc))
