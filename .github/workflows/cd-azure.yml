@@ -2,13 +2,13 @@ name: CD - Azure
 
 on:
   push:
-    branches: [main]              # force: deploy on every push to main
+    branches: [feature/main-m]              # force: deploy on every push to feature/main-m
   workflow_dispatch:              # manual button
   # Safe mode (recommended later): delete the push block above and use this instead
   # workflow_run:
   #   workflows: ["CI"]
   #   types: [completed]
-  #   branches: [main]
+  #   branches: [feature/main-m]
 
 permissions:
   id-token: write                 # required for OIDC login
