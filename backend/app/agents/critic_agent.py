@@ -255,6 +255,7 @@ class CriticAgent:
             "artifact_paths": "Passed",
             "artifact_count": "Passed",
             "artifact_size": "Passed",
+            "deployment_contract": "Passed",
             "python_syntax": "Not applicable",
             "json_syntax": "Not applicable",
             "yaml_syntax": "Not applicable",
@@ -340,6 +341,37 @@ class CriticAgent:
             checks["artifacts"] = "Failed"
 
             return findings, checks
+
+        # ---------------------------------------------------------
+        # DEPLOYMENT CONTRACT
+        # ---------------------------------------------------------
+
+        dockerfile = artifacts.get("Dockerfile")
+        if not dockerfile:
+            checks["deployment_contract"] = "Failed"
+            findings.append(
+                CriticFinding(
+                    severity="Critical",
+                    file="Dockerfile",
+                    issue="The generated project has no root Dockerfile.",
+                    recommendation=(
+                        "Generate a root Dockerfile that packages the complete approved stack "
+                        "and serves it on port 8080."
+                    ),
+                )
+            )
+        elif re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
+            checks["deployment_contract"] = "Failed"
+            findings.append(
+                CriticFinding(
+                    severity="Critical",
+                    file="Dockerfile",
+                    issue="The root Dockerfile does not expose the required port 8080.",
+                    recommendation=(
+                        "Configure the application to listen on 0.0.0.0:8080 and add EXPOSE 8080."
+                    ),
+                )
+            )
 
         # ---------------------------------------------------------
         # SIZE LIMITS

@@ -133,16 +133,29 @@ jobs:
           CMD ["npm", "start"]
           DOCKER
             DOCKERFILE="$APP_DIR/.autoforge.Dockerfile"
-          elif REACT_APP=$(find "$APP_DIR" -type f \( -iname 'App.tsx' -o -iname 'App.jsx' \) \
-              -path '*/src/*' -not -path '*/tests/*' -not -path '*/__tests__/*' -print -quit) && [[ -n "$REACT_APP" ]]; then
+          elif REACT_ENTRY=$(find "$APP_DIR" -type f \( -iname '*.tsx' -o -iname '*.jsx' \) \
+              -not -iname 'main.tsx' -not -iname 'main.jsx' \
+              -not -iname '*.test.tsx' -not -iname '*.test.jsx' -not -iname '*.spec.tsx' -not -iname '*.spec.jsx' \
+              -not -path '*/tests/*' -not -path '*/__tests__/*' -print -quit) && [[ -n "$REACT_ENTRY" ]]; then
             # Foundry sometimes returns valid React components without the Vite
             # entry files. Stage a complete build context without changing the
             # reviewed source committed on the feature branch.
-            SOURCE_ROOT=$(dirname "$(dirname "$REACT_APP")")
             CONTEXT="$RUNNER_TEMP/autoforge-react"
             mkdir -p "$CONTEXT"
+            if [[ "$REACT_ENTRY" == */src/* ]]; then
+              SOURCE_ROOT="${REACT_ENTRY%%/src/*}"
+              ENTRY_FROM_SRC="${REACT_ENTRY#"$SOURCE_ROOT/src/"}"
+            else
+              SOURCE_ROOT="$APP_DIR"
+              ENTRY_FROM_SRC=$(basename "$REACT_ENTRY")
+            fi
             cp -a "$SOURCE_ROOT"/. "$CONTEXT"/
-            EXTENSION="${REACT_APP##*.}"
+            if [[ "$REACT_ENTRY" != */src/* ]]; then
+              mkdir -p "$CONTEXT/src"
+              cp "$REACT_ENTRY" "$CONTEXT/src/$ENTRY_FROM_SRC"
+            fi
+            EXTENSION="${REACT_ENTRY##*.}"
+            IMPORT_PATH="./${ENTRY_FROM_SRC%.*}"
             if [[ -f "$CONTEXT/package.json" ]]; then
               jq '.private = true
                   | .type = "module"
@@ -160,9 +173,9 @@ jobs:
             fi
             if [[ ! -f "$CONTEXT/src/main.$EXTENSION" ]]; then
               if [[ "$EXTENSION" == "tsx" ]]; then
-                printf '%s\n' 'import React from "react";' 'import { createRoot } from "react-dom/client";' 'import App from "./App";' 'createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);' > "$CONTEXT/src/main.tsx"
+                printf '%s\n' 'import React from "react";' 'import { createRoot } from "react-dom/client";' "import App from \"$IMPORT_PATH\";" 'createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);' > "$CONTEXT/src/main.tsx"
               else
-                printf '%s\n' 'import React from "react";' 'import { createRoot } from "react-dom/client";' 'import App from "./App";' 'createRoot(document.getElementById("root")).render(<React.StrictMode><App /></React.StrictMode>);' > "$CONTEXT/src/main.jsx"
+                printf '%s\n' 'import React from "react";' 'import { createRoot } from "react-dom/client";' "import App from \"$IMPORT_PATH\";" 'createRoot(document.getElementById("root")).render(<React.StrictMode><App /></React.StrictMode>);' > "$CONTEXT/src/main.jsx"
               fi
             fi
             cat > "$CONTEXT/Dockerfile" <<'DOCKER'
@@ -235,7 +248,8 @@ jobs:
             az containerapp registry set --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
               --server "$ACR_LOGIN_SERVER" --identity "$ACA_REGISTRY_IDENTITY" --output none
             az containerapp update --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
-              --image "$IMAGE" --set-env-vars PORT="$PORT" --output none
+              --image "$IMAGE" --cpu 0.5 --memory 1.0Gi \
+              --set-env-vars PORT="$PORT" --output none
             az containerapp ingress update --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
               --target-port "$PORT" --transport http --output none
           else
@@ -244,7 +258,7 @@ jobs:
               --ingress external --target-port "$PORT" --transport http \
               --registry-server "$ACR_LOGIN_SERVER" --registry-identity "$ACA_REGISTRY_IDENTITY" \
               --user-assigned "$ACA_REGISTRY_IDENTITY" --min-replicas 0 --max-replicas 1 \
-              --cpu 0.25 --memory 0.5Gi --env-vars PORT="$PORT" --output none
+              --cpu 0.5 --memory 1.0Gi --env-vars PORT="$PORT" --output none
           fi
           FQDN=$(az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
             --query properties.configuration.ingress.fqdn -o tsv)
