@@ -64,7 +64,11 @@ class SecurityReviewer:
                     severity="Critical", file=path[:500], issue="Artifact path escapes or is not normalized within the project.",
                     recommendation="Use normalized project-relative paths."))
 
-            for pattern in self._secret_patterns:
+            for index, pattern in enumerate(self._secret_patterns):
+                # Dummy credentials are normal test fixtures. Keep concrete
+                # provider keys, access tokens, and private-key detection active.
+                if index == 0 and self._is_test_file(path):
+                    continue
                 if pattern.search(content):
                     checks["embedded_secrets"] = "Failed"
                     findings.append(CriticFinding(
@@ -130,6 +134,17 @@ class SecurityReviewer:
             scanned_files=count,
             skills_used=skill_usage,
             external_scans=external_scans,
+        )
+
+    @staticmethod
+    def _is_test_file(path: str) -> bool:
+        normalized = path.replace("\\", "/").lower()
+        parts = normalized.split("/")
+        return (
+            any(part in {"test", "tests", "__tests__", "testdata"} for part in parts)
+            or parts[-1].startswith(("test_", "tests_"))
+            or ".test." in parts[-1]
+            or ".spec." in parts[-1]
         )
 
     @staticmethod
