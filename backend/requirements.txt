@@ -10,3 +10,5 @@ azure-storage-blob
 PyYAML
 pypdf
 pytest==8.3.5
+azure-identity
+azure-storage-blob
