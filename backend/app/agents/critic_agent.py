@@ -750,9 +750,37 @@ A missing runtime sandbox is not proof of success.
                 )
             )
 
-            data = SpecAgent._parse_json_response(
-                str(response)
-            )
+            try:
+                data = SpecAgent._parse_json_response(str(response))
+            except ValueError:
+                # Foundry occasionally wraps, truncates, or otherwise returns
+                # structurally invalid JSON. Give the Critic one bounded chance
+                # to correct its formatting before using the completed local
+                # safety review as the fallback.
+                response = await agent.run(
+                    "Your previous response was not valid JSON. Return the same review again "
+                    "as one complete JSON object matching the requested schema, with no markdown."
+                )
+                try:
+                    data = SpecAgent._parse_json_response(str(response))
+                except ValueError:
+                    return CriticResult(
+                        summary=(
+                            "Local static checks completed. The optional Foundry source review "
+                            "returned malformed JSON after one retry, so its findings were not used."
+                        ),
+                        findings=local_findings,
+                        requirement_coverage=[],
+                        test_plan=[],
+                        checks={
+                            **checks,
+                            "foundry_source_review": "Unavailable: malformed JSON response",
+                        },
+                        runtime_status=(
+                            "Not run: Azure Container Apps sandbox is not configured"
+                        ),
+                        mode="local-static-review+foundry-response-invalid",
+                    )
 
             findings = self._normalize_findings(
                 data.get("findings"),
