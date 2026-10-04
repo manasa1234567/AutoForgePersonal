@@ -264,7 +264,7 @@ class BuildState(ApiModel):
     files: list[str]
     stage: Literal["Draft", "Understand", "Design", "Forge", "Prove", "Release", "Replay", "Error"] = "Draft"
     progress: int = 0
-    status: Literal["Draft", "Running", "Awaiting Approval", "Refined", "Deployed", "Blocked", "Failed"] = "Draft"
+    status: Literal["Draft", "Running", "Awaiting Approval", "Refined", "Deployed", "Blocked", "Failed", "Completed"] = "Draft"
 
     requirements: list[dict[str, Any]] = Field(default_factory=list)
     requirement_summary: str = ""
