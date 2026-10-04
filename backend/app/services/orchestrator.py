@@ -1274,16 +1274,26 @@ class Orchestrator:
 
         self._build_repository.save(build)
 
-        artifact_manifest: list[str] = []
+        artifact_manifest: list[dict[str, object]] = []
 
         if build.proof and build.proof.artifacts:
-            artifact_manifest = list(
-                build.proof.artifacts.keys()
-            )
+            for path, content in build.proof.artifacts.items():
+                artifact_manifest.append(
+                    {
+                        "path": path,
+                        "size": len(str(content)),
+                    }
+                )
+
+        image_tag = (
+            f"autoforge/{self._slug(build.title)}:"
+            f"{build.id}"
+        )
 
         plan = DeploymentPlan(
             status="ready",
             target="poc-simulated-environment",
+            imageTag=image_tag,
             summary=(
                 "POC deployment plan is ready. "
                 "Real Azure deployment is deferred."
@@ -1309,6 +1319,7 @@ class Orchestrator:
             severity="info",
             metadata={
                 "target": plan.target,
+                "image_tag": image_tag,
                 "blockers": plan.blockers,
                 "files": len(plan.artifact_manifest),
                 "mode": "poc",
