@@ -114,8 +114,11 @@ jobs:
         run: |
           docker build -t $REGISTRY/aegis-backend:$IMAGE_TAG ./backend
           docker build -f frontend/Dockerfile -t $REGISTRY/aegis-frontend:$IMAGE_TAG .
+          docker build -t $REGISTRY/autoforge-sandbox-runner:$IMAGE_TAG ./sandbox-runner
           docker push $REGISTRY/aegis-backend:$IMAGE_TAG
           docker push $REGISTRY/aegis-frontend:$IMAGE_TAG
+          docker push $REGISTRY/autoforge-sandbox-runner:$IMAGE_TAG
+          echo "Published sandbox runner image: $REGISTRY/autoforge-sandbox-runner:$IMAGE_TAG"
 
       - name: Deploy backend
         run: |
