@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 import httpx
+
 from azure.identity.aio import (
     DefaultAzureCredential,
     ManagedIdentityCredential,
@@ -17,6 +18,7 @@ from ..models.schemas import (
     Blueprint,
     CriticFinding,
 )
+
 from .dynamic_sessions_sandbox import SandboxResult
 
 
@@ -48,6 +50,7 @@ class ContainerAppsJobSandbox:
     """
 
     def __init__(self) -> None:
+
         self.subscription_id = self._required(
             "AZURE_SUBSCRIPTION_ID"
         )
@@ -120,6 +123,7 @@ class ContainerAppsJobSandbox:
         result_blob = f"{run_id}/result.json"
 
         try:
+
             # -----------------------------------------------------
             # 1. Upload contract
             # -----------------------------------------------------
@@ -131,6 +135,7 @@ class ContainerAppsJobSandbox:
 
             # -----------------------------------------------------
             # 2. Start Container Apps Job
+            # -----------------------------------------------------
             #
             # IMPORTANT:
             # AUTOFORGE_RUN_ID is passed dynamically for this
@@ -148,6 +153,7 @@ class ContainerAppsJobSandbox:
             )
 
             if result is None:
+
                 return SandboxResult(
                     status="failed",
                     summary=(
@@ -182,6 +188,7 @@ class ContainerAppsJobSandbox:
             return self._parse_result(result)
 
         except Exception as exc:
+
             return SandboxResult(
                 status="failed",
                 summary=(
@@ -198,7 +205,8 @@ class ContainerAppsJobSandbox:
                         file=None,
                         issue=(
                             "Sandbox infrastructure request failed: "
-                            f"{type(exc).__name__}: {str(exc)[:1000]}"
+                            f"{type(exc).__name__}: "
+                            f"{str(exc)[:1000]}"
                         ),
                         recommendation=(
                             "Inspect Azure Container Apps Job, "
@@ -215,9 +223,14 @@ class ContainerAppsJobSandbox:
 
     @staticmethod
     def _required(name: str) -> str:
-        value = os.getenv(name, "").strip()
+
+        value = os.getenv(
+            name,
+            ""
+        ).strip()
 
         if not value:
+
             raise RuntimeError(
                 f"Required environment variable {name} is not set."
             )
@@ -225,14 +238,18 @@ class ContainerAppsJobSandbox:
         return value
 
     def _timeout_seconds(self) -> int:
+
         raw = os.getenv(
             "AUTOFORGE_SANDBOX_TIMEOUT_SECONDS",
             "120",
         )
 
         try:
+
             value = int(raw)
+
         except ValueError as exc:
+
             raise RuntimeError(
                 "AUTOFORGE_SANDBOX_TIMEOUT_SECONDS "
                 "must be an integer."
@@ -248,17 +265,20 @@ class ContainerAppsJobSandbox:
     # =============================================================
 
     def _credential(self):
+
         identity_mode = os.getenv(
             "AUTOFORGE_IDENTITY_MODE",
             "managed_identity",
         ).lower()
 
         if identity_mode == "managed_identity":
+
             client_id = os.getenv(
                 "AZURE_CLIENT_ID"
             )
 
             if client_id:
+
                 return ManagedIdentityCredential(
                     client_id=client_id
                 )
@@ -272,6 +292,7 @@ class ContainerAppsJobSandbox:
     # =============================================================
 
     def _blob_service_url(self) -> str:
+
         return (
             f"https://{self.storage_account}"
             ".blob.core.windows.net"
@@ -287,12 +308,14 @@ class ContainerAppsJobSandbox:
         credential = self._credential()
 
         try:
+
             service = BlobServiceClient(
                 account_url=self._blob_service_url(),
                 credential=credential,
             )
 
             try:
+
                 container = service.get_container_client(
                     self.storage_container
                 )
@@ -312,9 +335,11 @@ class ContainerAppsJobSandbox:
                 )
 
             finally:
+
                 await service.close()
 
         finally:
+
             await credential.close()
 
     async def _download_json(
@@ -325,12 +350,14 @@ class ContainerAppsJobSandbox:
         credential = self._credential()
 
         try:
+
             service = BlobServiceClient(
                 account_url=self._blob_service_url(),
                 credential=credential,
             )
 
             try:
+
                 container = service.get_container_client(
                     self.storage_container
                 )
@@ -340,10 +367,13 @@ class ContainerAppsJobSandbox:
                 )
 
                 try:
+
                     response = await blob.download_blob()
+
                     content = await response.readall()
 
                 except Exception:
+
                     return None
 
                 data = json.loads(
@@ -351,14 +381,17 @@ class ContainerAppsJobSandbox:
                 )
 
                 if not isinstance(data, dict):
+
                     return None
 
                 return data
 
             finally:
+
                 await service.close()
 
         finally:
+
             await credential.close()
 
     # =============================================================
@@ -373,6 +406,7 @@ class ContainerAppsJobSandbox:
         credential = self._credential()
 
         try:
+
             # -----------------------------------------------------
             # Get Azure Resource Manager token
             # -----------------------------------------------------
@@ -445,6 +479,7 @@ class ContainerAppsJobSandbox:
                 )
 
                 if response.status_code >= 400:
+
                     raise RuntimeError(
                         "Azure Container Apps Job start failed: "
                         f"HTTP {response.status_code} "
@@ -452,6 +487,7 @@ class ContainerAppsJobSandbox:
                     )
 
         finally:
+
             await credential.close()
 
     # =============================================================
@@ -465,6 +501,7 @@ class ContainerAppsJobSandbox:
 
         # Give the Job a little room beyond the configured runner
         # timeout to upload its result.
+
         max_wait = self.timeout_seconds + 30
 
         interval = 2
@@ -477,6 +514,7 @@ class ContainerAppsJobSandbox:
             )
 
             if result is not None:
+
                 return result
 
             await asyncio.sleep(interval)
@@ -505,6 +543,7 @@ class ContainerAppsJobSandbox:
             "passed",
             "failed",
         }:
+
             status = "failed"
 
         summary = str(
@@ -526,6 +565,7 @@ class ContainerAppsJobSandbox:
             for item in raw_checks:
 
                 if not isinstance(item, dict):
+
                     continue
 
                 name = str(
@@ -543,11 +583,13 @@ class ContainerAppsJobSandbox:
                 ).strip()
 
                 if name:
+
                     checks[name] = check_status
 
         elif isinstance(raw_checks, dict):
 
             for name, value in raw_checks.items():
+
                 checks[str(name)] = str(value)
 
         raw_findings = data.get(
@@ -562,6 +604,7 @@ class ContainerAppsJobSandbox:
             for item in raw_findings:
 
                 if not isinstance(item, dict):
+
                     continue
 
                 severity = str(
@@ -577,6 +620,7 @@ class ContainerAppsJobSandbox:
                     "Medium",
                     "Low",
                 }:
+
                     severity = "Medium"
 
                 findings.append(
