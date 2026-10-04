@@ -102,9 +102,11 @@ jobs:
 
           CONTEXT="$APP_DIR"
           PORT=8080
+          DOCKERFILE=""
           if [[ -f "$APP_DIR/Dockerfile" ]]; then
             PORT=$(awk 'toupper($1)=="EXPOSE" {gsub(/\/tcp|\/udp/, "", $2); print $2; exit}' "$APP_DIR/Dockerfile" | grep -E '^[0-9]+$' || true)
             PORT="${PORT:-8080}"
+            DOCKERFILE="$APP_DIR/Dockerfile"
           elif [[ -f "$APP_DIR/package.json" ]] && jq -e '.scripts.build' "$APP_DIR/package.json" >/dev/null; then
             cat > "$APP_DIR/.autoforge.Dockerfile" <<'DOCKER'
           FROM node:22-alpine AS build
@@ -216,6 +218,11 @@ jobs:
           EXPOSE 8080
           DOCKER
             DOCKERFILE="$CONTEXT/Dockerfile"
+          fi
+
+          if [[ -z "$DOCKERFILE" || ! -f "$DOCKERFILE" ]]; then
+            echo "AutoForge could not resolve a Dockerfile for the generated application." >&2
+            exit 1
           fi
 
           IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID"
