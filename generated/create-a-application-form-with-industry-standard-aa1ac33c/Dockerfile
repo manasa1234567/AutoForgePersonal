@@ -27,7 +27,7 @@ COPY --from=backend-build /app/app /app/app
 # Setup frontend static files
 COPY --from=frontend-build /frontend/dist /app/static
 
-# Install runtime python packages USUALLY needed
+# Install runtime python packages usually needed
 RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn[standard]==0.34.2 pydantic==2.11.3 aiofiles starlette
 
 # Combined ASGI app serves frontend static and backend api
