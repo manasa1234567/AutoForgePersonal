@@ -33,7 +33,9 @@ class ContainerStartupTests(unittest.TestCase):
             (site / "assets" / "app.js").write_text('console.log("hello")', encoding="utf-8")
             namespace = {}
             # Execute only this controlled fixture, never downloaded artifacts.
-            source = fixed["backend/app/main.py"].replace('"/app/frontend/dist"', repr(folder))
+            source = fixed["backend/app/main.py"].replace(
+                '"/app/frontend/dist/index.html"', repr(str(site / "index.html"))
+            ).replace('"/app/frontend/dist"', repr(folder))
             exec(compile(source, "fixture.py", "exec"), namespace)
             with TestClient(namespace["app"]) as client:
                 self.assertEqual(client.get("/").text, '<h1>Hello UI</h1>')
@@ -72,7 +74,9 @@ async def form():
             (site / "assets").mkdir()
             (site / "assets" / "app.js").write_text('console.log("ready")', encoding="utf-8")
             namespace = {}
-            source = fixed["backend/app/main.py"].replace('"/app/frontend/dist"', repr(folder))
+            source = fixed["backend/app/main.py"].replace(
+                '"/app/frontend/dist/index.html"', repr(str(site / "index.html"))
+            ).replace('"/app/frontend/dist"', repr(folder))
             exec(compile(source, "generated_main.py", "exec"), namespace)
             with TestClient(namespace["app"]) as client:
                 self.assertEqual(client.get("/").text, '<h1>Application UI</h1>')
