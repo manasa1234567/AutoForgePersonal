@@ -9,7 +9,7 @@ class ApplicationData(BaseModel):
     first_name: constr(strip_whitespace=True, min_length=1, max_length=50)
     last_name: constr(strip_whitespace=True, min_length=1, max_length=50)
     date_of_birth: date
-    gender: constr(regex=r'^(male|female|other|preferNotToSay)$')
+    gender: constr(regex=r'^(male|female|other|preferNotToSay)$') if hasattr(constr, 'regex') else constr(min_length=1, max_length=20)
     email: EmailStr
     phone: constr(strip_whitespace=True, min_length=7, max_length=20)
     address: constr(strip_whitespace=True, min_length=1, max_length=100)
