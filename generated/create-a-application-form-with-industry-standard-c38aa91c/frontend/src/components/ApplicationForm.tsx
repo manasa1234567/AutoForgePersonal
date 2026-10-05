@@ -28,7 +28,6 @@ interface FormData {
 }
 
 interface FormErrors {
-  [key: string]: string | undefined;
   first_name?: string;
   last_name?: string;
   email?: string;
@@ -40,7 +39,7 @@ interface FormErrors {
   country?: string;
   date_of_birth?: string;
   education_level?: string;
-  employment_history?: { [index: number]: { [key: string]: string } };
+  employment_history?: Record<number, Record<string, string>>;
   skills?: string;
 }
 
@@ -159,9 +158,9 @@ const ApplicationForm: React.FC = () => {
     if (!formData.education_level.trim()) newErrors.education_level = 'Education level is required';
 
     // Validate employment history entries
-    const employmentErrors: { [index: number]: { [key: string]: string } } = {};
+    const employmentErrors: Record<number, Record<string, string>> = {};
     formData.employment_history.forEach((entry, i) => {
-      const entryErrors: { [key: string]: string } = {};
+      const entryErrors: Record<string, string> = {};
       if (!entry.company_name.trim()) entryErrors.company_name = 'Company name is required';
       if (!entry.position.trim()) entryErrors.position = 'Position is required';
       if (!entry.start_date.trim()) {
