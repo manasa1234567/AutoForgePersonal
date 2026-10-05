@@ -59,8 +59,15 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
         for path in files
     ):
         return
-    path = module.replace(".", "/") + ".py"
-    source = files.get(path, "")
+    module_path = module.replace(".", "/") + ".py"
+    matching_paths = [
+        candidate for candidate in files
+        if candidate == module_path or candidate.endswith("/" + module_path)
+    ]
+    if len(matching_paths) != 1:
+        return
+    path = matching_paths[0]
+    source = files[path]
     try:
         tree = ast.parse(source)
     except SyntaxError:
