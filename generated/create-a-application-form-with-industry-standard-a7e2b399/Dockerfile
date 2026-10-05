@@ -26,17 +26,10 @@ EXPOSE 8080
 
 ENV PYTHONPATH=/app/backend
 
-# Start both backend (uvicorn) and a simple static file server for frontend
-# Use a tiny node static server (serve) is common but we want to avoid node in final image
-# Use 'uvicorn' to serve API on port 8000 and reverse proxy through uvicorn's root
-
-# However, for simplicity, we will serve frontend static files on / via fastapi static files mount
-# and backend API on /submit
-
 # Create a startup script:
 RUN echo """
 #!/bin/sh
-uvicorn backend.main:app --host 0.0.0.0 --port 8080
+exec uvicorn backend.main:app --host 0.0.0.0 --port 8080
 """ > /start.sh
 RUN chmod +x /start.sh
 
