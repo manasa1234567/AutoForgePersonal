@@ -235,7 +235,12 @@ jobs:
             docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true
           }
           trap cleanup_container EXIT
-          HOST_PORT=$(docker port "$CONTAINER_ID" "$PORT/tcp" | head -n 1 | awk -F: '{print $NF}')
+          HOST_PORT=$(docker port "$CONTAINER_ID" "$PORT/tcp" 2>/dev/null | head -n 1 | awk -F: '{print $NF}' || true)
+          if [[ -z "$HOST_PORT" ]]; then
+            echo "Generated container exited before exposing port $PORT. Startup logs follow:" >&2
+            docker inspect --format 'Status={{.State.Status}} ExitCode={{.State.ExitCode}} Error={{.State.Error}}' "$CONTAINER_ID" || true
+            exit 1
+          fi
           PREFLIGHT_OK=false
           for attempt in {1..30}; do
             STATUS=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \

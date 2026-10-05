@@ -15,6 +15,7 @@ from .artifact_limits import (
 )
 from .spec_agent import SpecAgent
 from .deployment_contract import packaging_issues
+from .container_startup import normalize_startup
 
 
 @dataclass(frozen=True)
@@ -324,6 +325,7 @@ For packaging repairs, inspect the whole container startup chain in one pass: re
 
     @staticmethod
     def _validate_deployment_contract(files: dict[str, str]) -> dict[str, str]:
+        files = normalize_startup(files)
         dockerfile = files.get("Dockerfile")
         if not dockerfile:
             raise ValueError(
