@@ -83,6 +83,51 @@ async def form():
                 self.assertEqual(client.get("/api/form").json(), {"form": "ready"})
                 self.assertEqual(client.get("/assets/app.js").status_code, 200)
 
+    def test_cra_backend_main_build_directory_serves_ui_and_keeps_api(self):
+        files = {
+            "Dockerfile": '''FROM python:3.11-slim as backend-build
+WORKDIR /app
+COPY backend/requirements.txt ./
+FROM node:18-alpine as frontend-build
+WORKDIR /app
+RUN npm run build
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=backend-build /app/backend /app/backend
+COPY --from=frontend-build /app/build /app/frontend/build
+EXPOSE 8080
+CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+''',
+            "frontend/public/index.html": '<!doctype html><div id="root"></div>',
+            "backend/main.py": '''from fastapi import FastAPI
+app = FastAPI()
+@app.get("/")
+async def root():
+    return {"message": "API health"}
+@app.get("/submit")
+async def submit():
+    return {"status": "ready"}
+''',
+        }
+        fixed = normalize_startup(files)
+        self.assertIn('_AutoForgeFileResponse("/app/frontend/build/index.html")', fixed["backend/main.py"])
+        self.assertIn('directory="/app/frontend/build"', fixed["backend/main.py"])
+        self.assertEqual(normalize_startup(fixed), fixed)
+        with tempfile.TemporaryDirectory() as folder:
+            site = Path(folder)
+            (site / "index.html").write_text('<h1>Application UI</h1>', encoding="utf-8")
+            (site / "static").mkdir()
+            (site / "static" / "app.js").write_text('console.log("ready")', encoding="utf-8")
+            source = fixed["backend/main.py"].replace(
+                '"/app/frontend/build/index.html"', repr(str(site / "index.html"))
+            ).replace('"/app/frontend/build"', repr(folder))
+            namespace = {}
+            exec(compile(source, "backend_main.py", "exec"), namespace)
+            with TestClient(namespace["app"]) as client:
+                self.assertEqual(client.get("/").text, '<h1>Application UI</h1>')
+                self.assertEqual(client.get("/submit").json(), {"status": "ready"})
+                self.assertEqual(client.get("/static/app.js").status_code, 200)
+
     def test_existing_routes_and_custom_layouts_are_unchanged(self):
         for extra in [
             'app.mount("/", static_app)\n',

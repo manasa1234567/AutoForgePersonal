@@ -6,7 +6,7 @@ import re
 
 
 def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
-    """Serve the packaged SPA for the known /app FastAPI frontend layout."""
+    """Serve a packaged SPA when a FastAPI image copies a frontend build."""
     if re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage) != ["/app"]:
         return
     if re.search(r"(?im)^ENTRYPOINT\b", final_stage):
@@ -19,25 +19,41 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
     except ValueError:
         command = commands[0].strip()
     if isinstance(command, list):
-        valid_command = command[:4] in (
-            ["python", "-m", "uvicorn", "app.main:app"],
-            ["python", "-m", "uvicorn", "backend.app.main:app"],
-        )
+        if command[:3] == ["python", "-m", "uvicorn"] and len(command) > 3:
+            app_target = command[3]
+        elif command and command[0] == "uvicorn" and len(command) > 1:
+            app_target = command[1]
+        else:
+            return
     else:
-        valid_command = bool(re.match(
-            r"^(?:exec\s+)?(?:python(?:3)?\s+-m\s+uvicorn|uvicorn)\s+(?:app|backend\.app)\.main:app(?:\s|$)",
+        match = re.match(
+            r"^(?:exec\s+)?(?:python(?:3)?\s+-m\s+uvicorn|uvicorn)\s+([^\s]+)",
             command,
-        ))
-    if not valid_command:
+        )
+        if not match:
+            return
+        app_target = match.group(1)
+    module, separator, app_name = app_target.partition(":")
+    if not separator or not module or app_name != "app":
         return
-    if not re.search(
-        r"(?im)^COPY\s+--from=\S+\s+\S*dist/?\s+(?:\./|/app/)?frontend/dist/?\s*$",
-        final_stage,
+    static_directory = None
+    for line in final_stage.splitlines():
+        copy = re.match(r"(?i)^COPY\s+--from=\S+\s+\S+\s+(\S+)\s*$", line.strip())
+        if not copy:
+            continue
+        destination = copy.group(1).rstrip("/")
+        parts = destination.strip("/").split("/")
+        if "frontend" in parts and parts[-1] in {"build", "dist", "out"}:
+            static_directory = "/" + destination.strip("/")
+            break
+    if not static_directory:
+        return
+    if not any(
+        path.startswith("frontend/") and path.endswith("index.html")
+        for path in files
     ):
         return
-    if "frontend/index.html" not in files:
-        return
-    path = "backend/app/main.py"
+    path = module.replace(".", "/") + ".py"
     source = files.get(path, "")
     try:
         tree = ast.parse(source)
@@ -72,9 +88,9 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
         '@app.middleware("http")\n'
         'async def _autoforge_serve_frontend_root(request, call_next):\n'
         '    if request.method == "GET" and request.url.path == "/":\n'
-        '        return _AutoForgeFileResponse("/app/frontend/dist/index.html")\n'
+        f'        return _AutoForgeFileResponse({json.dumps(static_directory + "/index.html")})\n'
         '    return await call_next(request)\n'
-        'app.mount("/", _AutoForgeStaticFiles(directory="/app/frontend/dist", html=True), name="frontend")\n'
+        f'app.mount("/", _AutoForgeStaticFiles(directory={json.dumps(static_directory)}, html=True), name="frontend")\n'
     )
 
 
