@@ -1,7 +1,7 @@
 # Multi-stage build
 
 # Build frontend
-FROM node:20-alpine as frontend-build
+FROM node:18-alpine as frontend-build
 WORKDIR /app
 
 # Copy package files
