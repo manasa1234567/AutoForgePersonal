@@ -254,6 +254,9 @@ class DeploymentCallback(ApiModel):
     status: Literal["succeeded", "failed"]
     url: str | None = None
     message: str = ""
+    commit_sha: str = Field(default="", pattern=r"^(?:[a-f0-9]{40})?$")
+    phase: str = Field(default="", max_length=40)
+    diagnostics: str = Field(default="", max_length=16000)
 
 
 class BuildMetrics(ApiModel):
@@ -300,6 +303,9 @@ class BuildState(ApiModel):
     repository_url: str | None = None
     deployed_url: str | None = None
     deployment_status: Literal["not_started", "running", "succeeded", "failed"] = "not_started"
+    deployment_commit: str = ""
+    deployment_repair_attempts: int = 0
+    deployment_repairing: bool = False
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)

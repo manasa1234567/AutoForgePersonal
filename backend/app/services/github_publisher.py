@@ -16,7 +16,7 @@ class GitHubPublisher:
 
     api = "https://api.github.com"
 
-    async def publish(self, build: BuildState) -> dict[str, str]:
+    async def publish(self, build: BuildState, *, expected_commit: str = "") -> dict[str, str]:
         owner = os.getenv("AUTOFORGE_GITHUB_OWNER", "").strip()
         repository = os.getenv("AUTOFORGE_GITHUB_REPOSITORY", "").strip()
         app_id = os.getenv("AUTOFORGE_GITHUB_APP_ID", "").strip()
@@ -64,6 +64,10 @@ class GitHubPublisher:
             default_branch = os.getenv("AUTOFORGE_GITHUB_BASE_BRANCH", "").strip() or repo_response.json().get("default_branch")
             if not default_branch:
                 raise RuntimeError("Could not determine the repository base branch.")
+            if expected_commit:
+                if not build.feature_branch or not build.feature_branch.startswith("feature/"):
+                    raise RuntimeError("Deployment repair requires the original feature branch.")
+                default_branch = build.feature_branch
 
             ref_response = await client.get(
                 f"{repo_url}/git/ref/heads/{quote(default_branch, safe='/')}", headers=headers
@@ -72,11 +76,15 @@ class GitHubPublisher:
             base_sha = ref_response.json().get("object", {}).get("sha")
             if not base_sha:
                 raise RuntimeError("GitHub did not return the base branch commit.")
+            if expected_commit and base_sha != expected_commit:
+                raise RuntimeError("Feature branch changed since the failed deployment; refusing to overwrite newer code.")
 
             tree_entries = []
             slug = re.sub(r"[^a-z0-9]+", "-", build.title.lower()).strip("-")[:48].strip("-") or "use-case"
             unique_id = re.sub(r"[^a-zA-Z0-9-]", "", build.id)[:24] or str(int(time.time()))
             project_root = f"generated/{slug}-{unique_id}"
+            if expected_commit:
+                project_root = "generated/" + build.feature_branch.removeprefix("feature/")
             for path, content in sorted(artifacts.items()):
                 normalized = path.replace("\\", "/")
                 if (not normalized or normalized.startswith("/") or
@@ -102,17 +110,28 @@ class GitHubPublisher:
             tree_sha = tree_response.json()["sha"]
             commit_response = await client.post(
                 f"{repo_url}/git/commits", headers=headers,
-                json={"message": f"AutoForge: {build.title[:120]}", "tree": tree_sha, "parents": [base_sha]},
+                # The active workflow explicitly dispatches the next run from
+                # the default branch, so even old feature branches use current
+                # deployment automation. Avoid a second push-triggered run.
+                json={"message": f"AutoForge: {build.title[:120]}" + (" [skip ci]" if expected_commit else ""), "tree": tree_sha, "parents": [base_sha]},
             )
             self._raise_github(commit_response, "create feature branch commit")
             commit_sha = commit_response.json()["sha"]
 
             branch = f"feature/{slug}-{unique_id}"
-            create_ref = await client.post(
-                f"{repo_url}/git/refs", headers=headers,
-                json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
-            )
-            self._raise_github(create_ref, "create feature branch")
+            if expected_commit:
+                branch = build.feature_branch
+                update_ref = await client.patch(
+                    f"{repo_url}/git/refs/heads/{quote(branch, safe='/')}", headers=headers,
+                    json={"sha": commit_sha, "force": False},
+                )
+                self._raise_github(update_ref, "advance repaired feature branch")
+            else:
+                create_ref = await client.post(
+                    f"{repo_url}/git/refs", headers=headers,
+                    json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
+                )
+                self._raise_github(create_ref, "create feature branch")
 
         repository_url = f"https://github.com/{owner}/{repository}"
         return {"branch": branch, "branch_url": f"{repository_url}/tree/{quote(branch, safe='/')}", "repository_url": repository_url, "commit_sha": commit_sha}

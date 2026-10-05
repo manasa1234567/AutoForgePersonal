@@ -5,7 +5,7 @@ import re
 import zipfile
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, DeploymentCallback, RefineRequest
@@ -134,6 +134,7 @@ async def prepare_build_deployment(build_id: str):
 async def record_deployment_callback(
     build_id: str,
     payload: DeploymentCallback,
+    background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
 ):
     expected = os.getenv("AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN", "")
@@ -145,7 +146,11 @@ async def record_deployment_callback(
         if parsed.scheme != "https" or not parsed.netloc:
             raise HTTPException(status_code=422, detail="A valid HTTPS URL is required for successful deployment")
     try:
-        return store.record_deployment(build_id, payload)
+        build, queued = store.accept_deployment_callback(build_id, payload)
+        if queued:
+            from ..services.deployment_repair import repair_deployment
+            background_tasks.add_task(repair_deployment, store, build_id, payload)
+        return build
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Build not found") from exc
     except ValueError as exc:

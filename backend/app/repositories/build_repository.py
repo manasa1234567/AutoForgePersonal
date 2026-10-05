@@ -14,12 +14,22 @@ class BuildRepository(Protocol):
 
     def list(self) -> list[BuildState]: ...
 
+    def claim_deployment_repair(self, build_id: str, commit: str) -> bool: ...
+
 
 class InMemoryBuildRepository:
     """Development-only repository. Records disappear when the API process restarts."""
 
     def __init__(self) -> None:
         self._items: dict[str, BuildState] = {}
+        self._deployment_claims: set[tuple[str, str]] = set()
+
+    def claim_deployment_repair(self, build_id: str, commit: str) -> bool:
+        key = (build_id, commit)
+        if key in self._deployment_claims:
+            return False
+        self._deployment_claims.add(key)
+        return True
 
     def save(self, build: BuildState) -> None:
         self._items[build.id] = build

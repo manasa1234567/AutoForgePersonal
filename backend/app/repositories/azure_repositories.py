@@ -55,6 +55,19 @@ class AzureBuildRepository:
         self._snapshots.get_container_properties()
         self._intake.get_container_properties()
 
+    def claim_deployment_repair(self, build_id: str, commit: str) -> bool:
+        # Immutable claim prevents two API replicas repairing the same commit.
+        try:
+            self._snapshots.upload_blob(
+                name=f"{build_id}/deployment-repairs/{commit}.json",
+                data=b'{"claimed":true}', overwrite=False,
+            )
+        except Exception as exc:
+            if getattr(exc, "status_code", None) == 409:
+                return False
+            raise
+        return True
+
     def save(self, build: BuildState) -> None:
         snapshot_name = f"{build.id}/snapshots/{uuid4().hex}.json"
         payload = build.model_dump(mode="json", by_alias=True)

@@ -16,13 +16,15 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: write
 
 concurrency:
-  group: generated-app-${{ github.ref_name }}
+  group: generated-app-${{ inputs.branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -64,6 +66,7 @@ jobs:
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "app_name=af-$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+          echo "DEPLOY_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -94,6 +97,8 @@ jobs:
           BUILD_ID: ${{ steps.config.outputs.build_id }}
         run: |
           set -euo pipefail
+          echo packaging > "$RUNNER_TEMP/deployment-phase"
+          exec > >(tee "$RUNNER_TEMP/deployment.log") 2>&1
           if find "$APP_DIR" -type f \( -name pom.xml -o -name requirements.txt -o -name pyproject.toml -o -name go.mod \) \
               -not -path '*/tests/*' -print -quit | grep -q . && [[ ! -f "$APP_DIR/Dockerfile" ]]; then
             echo "This generated project includes a backend service but no root Dockerfile. Add a Dockerfile that packages the approved runtime before deploying; refusing to publish only its frontend." >&2
@@ -225,10 +230,13 @@ jobs:
             exit 1
           fi
 
-          IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID"
+          IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID-${DEPLOY_COMMIT:0:12}"
+          echo registry > "$RUNNER_TEMP/deployment-phase"
           az acr login --name "$ACR_NAME"
-          docker build --file "$DOCKERFILE" --tag "$IMAGE" "$CONTEXT"
+          echo image_build > "$RUNNER_TEMP/deployment-phase"
+          docker build --progress plain --file "$DOCKERFILE" --tag "$IMAGE" "$CONTEXT"
 
+          echo startup > "$RUNNER_TEMP/deployment-phase"
           CONTAINER_ID=$(docker run --detach --publish "127.0.0.1::$PORT" "$IMAGE")
           cleanup_container() {
             docker logs "$CONTAINER_ID" 2>&1 || true
@@ -263,6 +271,7 @@ jobs:
           trap - EXIT
           cleanup_container
 
+          echo registry > "$RUNNER_TEMP/deployment-phase"
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "port=$PORT" >> "$GITHUB_OUTPUT"
@@ -276,6 +285,7 @@ jobs:
           APP_NAME: ${{ steps.config.outputs.app_name }}
         run: |
           set -euo pipefail
+          echo azure > "$RUNNER_TEMP/deployment-phase"
           APP_STATE=$(az containerapp show --name "$APP_NAME" --resource-group "$ACA_RESOURCE_GROUP" \
             --query properties.provisioningState -o tsv 2>/dev/null || true)
           if [[ "$APP_STATE" == "Failed" ]]; then
@@ -317,6 +327,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo smoke > "$RUNNER_TEMP/deployment-phase"
           for attempt in {1..12}; do
             STATUS=$(curl -sS --connect-timeout 3 --max-time 5 -o /dev/null -w '%{http_code}' "$APP_URL/" || true)
             echo "Smoke test $attempt: HTTP $STATUS"
@@ -341,8 +352,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BODY=$(jq -n --arg branch "$DEPLOY_BRANCH" --arg url "$APP_URL" \
-            '{branch:$branch,status:"succeeded",url:$url}')
+          BODY=$(jq -n --arg branch "$DEPLOY_BRANCH" --arg url "$APP_URL" --arg commit "$DEPLOY_COMMIT" \
+            '{branch:$branch,status:"succeeded",url:$url,commitSha:$commit}')
           for attempt in {1..12}; do
             STATUS=$(curl -sS --max-time 20 -o "$RUNNER_TEMP/callback.json" -w '%{http_code}' \
               -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
@@ -362,19 +373,80 @@ jobs:
         if: failure() && env.AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN != ''
         env:
           BUILD_ID: ${{ steps.config.outputs.build_id }}
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail
           [[ -n "${BACKEND_URL:-}" && -n "${BUILD_ID:-}" ]] || exit 0
-          BODY=$(jq -n --arg branch "$DEPLOY_BRANCH" \
-            --arg message "Generated-app deployment failed. Open the Deploy generated app to Azure Container Apps workflow run for details." \
-            '{branch:$branch,status:"failed",message:$message}')
-          for attempt in {1..6}; do
-            STATUS=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' \
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          phase_path = root / 'deployment-phase'
+          phase = phase_path.read_text().strip() if phase_path.exists() else 'configuration'
+          log = root / 'deployment.log'
+          # Read a bounded tail without loading arbitrarily large build logs.
+          if log.exists():
+              with log.open('rb') as stream:
+                  stream.seek(max(0, log.stat().st_size - 64000))
+                  detail = stream.read().decode('utf-8', errors='replace')
+          else:
+              detail = ''
+          for name, value in os.environ.items():
+              if len(value) >= 8 and any(key in name.upper() for key in ('TOKEN', 'SECRET', 'PASSWORD', 'PRIVATE_KEY', 'CONNECTION_STRING')):
+                  detail = detail.replace(value, '[REDACTED]')
+          detail = re.sub(r'(?i)(bearer\s+)[\w.+=/-]+', r'\1[REDACTED]', detail)
+          detail = re.sub(r'(?i)((?:password|token|secret|api[_-]?key)\s*[=:]\s*)[^\s,;]+', r'\1[REDACTED]', detail)
+          detail = re.sub(r'(https?://)[^\s/@]+:[^\s/@]+@', r'\1[REDACTED]@', detail)
+          detail = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----', '[REDACTED]', detail, flags=re.S)
+          detail = detail[-14000:] if phase in ('packaging', 'image_build', 'startup') else ''
+          payload = {'branch': os.environ['DEPLOY_BRANCH'], 'status': 'failed',
+                     'commitSha': os.environ.get('DEPLOY_COMMIT', ''), 'phase': phase,
+                     'diagnostics': detail,
+                     'message': f'Generated application failed during {phase}. ' + detail[-700:]}
+          (root / 'failure-callback.json').write_text(json.dumps(payload), encoding='utf-8')
+          PY
+          # POST is idempotent for this commit. Repeating it also polls repair
+          # progress, including when the first acknowledgement was lost.
+          for attempt in {1..48}; do
+            STATUS=$(curl -sS --max-time 15 -o "$RUNNER_TEMP/repair-response.json" -w '%{http_code}' \
               -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
               -H 'Content-Type: application/json' -X POST \
-              --data "$BODY" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true)
-            [[ "$STATUS" == "200" ]] && exit 0
-            sleep 10
+              --data-binary @"$RUNNER_TEMP/failure-callback.json" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true)
+            # A newer commit means this failure is obsolete; its run is queued.
+            if [[ "$STATUS" == "409" ]]; then
+              echo "Callback commit is stale or publication is still being recorded."
+            elif [[ "$STATUS" == "200" ]]; then
+              REPAIRING=$(jq -r '.deploymentRepairing // false' "$RUNNER_TEMP/repair-response.json")
+              CURRENT=$(jq -r '.deploymentCommit // ""' "$RUNNER_TEMP/repair-response.json")
+              if [[ -n "$CURRENT" && "$CURRENT" != "$DEPLOY_COMMIT" ]]; then
+                if ! gh workflow run deploy-generated-app.yml --repo "$GITHUB_REPOSITORY" \
+                    --ref "$DEFAULT_BRANCH" -f branch="$DEPLOY_BRANCH"; then
+                  jq --arg commit "$CURRENT" '.commitSha=$commit | .phase="dispatch" | .diagnostics="" | .message="Repair was published, but GitHub could not dispatch its rebuild. Check Actions write permission and run the generated-app workflow manually from the default branch."' \
+                    "$RUNNER_TEMP/failure-callback.json" > "$RUNNER_TEMP/dispatch-failure.json"
+                  curl -sS --max-time 20 -o /dev/null \
+                    -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
+                    -H 'Content-Type: application/json' -X POST \
+                    --data-binary @"$RUNNER_TEMP/dispatch-failure.json" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true
+                  exit 1
+                fi
+                echo "Reviewed repair published; dispatched rebuild using the default branch workflow."
+                exit 0
+              fi
+              if [[ "$REPAIRING" != "true" ]]; then
+                echo "Failure recorded; no further automatic repair is running."
+                exit 0
+              fi
+              echo "Automatic source repair is in progress ($attempt/48)."
+            fi
+            sleep 15
           done
-          echo "Could not report the deployment failure to AutoForge." >&2
+          # Turn a worker restart or lost repair task into a visible failure.
+          jq '.phase="repair_timeout" | .diagnostics="" | .message="Automatic deployment repair timed out. Check backend logs; the application has not been deployed."' \
+            "$RUNNER_TEMP/failure-callback.json" > "$RUNNER_TEMP/repair-timeout.json"
+          curl -sS --max-time 20 -o /dev/null \
+            -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
+            -H 'Content-Type: application/json' -X POST \
+            --data-binary @"$RUNNER_TEMP/repair-timeout.json" "$BACKEND_URL/api/builds/$BUILD_ID/deployment-callback" || true
+          echo "Repair acknowledgement timed out; inspect the backend and workflow logs." >&2

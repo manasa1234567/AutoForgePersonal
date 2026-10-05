@@ -1324,6 +1324,58 @@ class Orchestrator:
     # RELEASE PUBLICATION
     # ============================================================
 
+    def accept_deployment_callback(self, build_id: str, callback: DeploymentCallback) -> tuple[BuildState, bool]:
+        from .deployment_repair import clean_diagnostics
+        build = self.get(build_id)
+        if build.feature_branch != callback.branch:
+            raise ValueError("Deployment callback branch does not match this build.")
+        if not build.deployment_commit:
+            # Existing builds published before commit tracking retain the SHA
+            # in their audit trail. Never adopt an arbitrary callback commit.
+            for event in reversed(build.audit):
+                commit = event.metadata.get("commit")
+                if event.metadata.get("branch") == build.feature_branch and commit:
+                    build.deployment_commit = commit
+                    self._build_repository.save(build)
+                    break
+        if callback.commit_sha and build.deployment_commit and callback.commit_sha != build.deployment_commit:
+            return build, False
+        if build.deployment_status == "succeeded":
+            return build, False
+        if build.deployment_repairing and callback.phase != "repair_timeout":
+            return build, False
+        if build.deployment_commit and not callback.commit_sha:
+            raise ValueError("This build requires commitSha in deployment callbacks; update the deployment workflow.")
+        callback = callback.model_copy(update={
+            "message": clean_diagnostics(callback.message),
+            "diagnostics": clean_diagnostics(callback.diagnostics),
+        })
+        if callback.phase == "repair_timeout":
+            build.deployment_repairing = False
+        # Legacy workflows still report status, but cannot safely trigger repair
+        # without an exact commit correlation and real diagnostics.
+        can_repair = (
+            callback.status == "failed" and callback.phase in {"packaging", "image_build", "startup"}
+            and callback.diagnostics and callback.commit_sha and build.deployment_commit == callback.commit_sha
+            and build.deployment_repair_attempts < 3
+        )
+        if can_repair and self._build_repository.claim_deployment_repair(build_id, callback.commit_sha):
+            build.deployment_repair_attempts += 1
+            build.deployment_repairing = True
+            build.deployment_status = "running"
+            build.status = "Running"
+            build.stage = "Release"
+            build.error = None
+            self._set_agent(build, "Coder Agent", "Running", f"Repairing actual deployment failure ({build.deployment_repair_attempts}/3)")
+            self._add_event(build, "Deployment Repair", f"Container {callback.phase} failed; automatic repair {build.deployment_repair_attempts}/3 started", "Coder Agent", metadata={"commit": callback.commit_sha})
+            self._build_repository.save(build)
+            return build, True
+        if can_repair:
+            return self.get(build_id), False
+        if callback.status == "failed" and build.deployment_repair_attempts >= 3:
+            callback = callback.model_copy(update={"message": "Automatic repair limit reached (3). " + callback.message})
+        return self.record_deployment(build_id, callback), False
+
     def record_deployment(self, build_id: str, callback: DeploymentCallback) -> BuildState:
         build = self.get(build_id)
         if build.feature_branch != callback.branch:
@@ -1349,6 +1401,7 @@ class Orchestrator:
             build.deployment_status = "failed"
             build.status = "Failed"
             build.error = message
+            build.deployment_repairing = False
             self._set_agent(build, "Deployer Agent", "Failed", message)
             self._add_event(
                 build,
@@ -1385,6 +1438,9 @@ class Orchestrator:
         build.feature_branch = published["branch"]
         build.feature_branch_url = published["branch_url"]
         build.repository_url = published["repository_url"]
+        build.deployment_commit = published["commit_sha"]
+        build.deployment_repair_attempts = 0
+        build.deployment_repairing = False
 
         self._set_agent(build, "Deployer Agent", "Running", f"Deploying {build.feature_branch} to Azure Container Apps")
         self._add_event(
