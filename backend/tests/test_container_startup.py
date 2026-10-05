@@ -128,6 +128,58 @@ async def submit():
                 self.assertEqual(client.get("/submit").json(), {"status": "ready"})
                 self.assertEqual(client.get("/static/app.js").status_code, 200)
 
+    def test_malformed_combined_asgi_dockerfile_is_repaired(self):
+        files = {
+            "Dockerfile": '''FROM python:3.11-slim as backend-build
+FROM node:18-alpine as frontend-build
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=backend-build /app/app /app/app
+COPY --from=StaticFiles /app/frontend/build /app/static
+RUN echo "from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from app.main import app as api_app
+
+app = FastAPI()
+app.mount('/static', StaticFiles(directory='./static'), name='static')
+app.mount('/api', api_app)
+
+@app.get('/')
+async def root():
+    return {'message': 'Application Form Fullstack Backend Running'}
+" > main_combined.py
+EXPOSE 8080
+CMD ["uvicorn", "main_combined:app", "--host", "0.0.0.0", "--port", "8080"]
+''',
+            "frontend/public/index.html": '<!doctype html><div id="root"></div>',
+            "backend/app/main.py": '''from fastapi import FastAPI
+app = FastAPI()
+@app.get("/")
+async def root():
+    return {"message": "backend"}
+@app.get("/api/applications")
+async def applications():
+    return {"items": []}
+''',
+        }
+        fixed = normalize_startup(files)
+        self.assertNotIn('RUN echo "from fastapi import FastAPI', fixed["Dockerfile"])
+        self.assertIn('"app.main:app"', fixed["Dockerfile"])
+        self.assertNotIn("main_combined:app", fixed["Dockerfile"])
+        self.assertEqual(normalize_startup(fixed), fixed)
+        with tempfile.TemporaryDirectory() as folder:
+            site = Path(folder)
+            (site / "index.html").write_text("<!doctype html><h1>Application UI</h1>", encoding="utf-8")
+            source = fixed["backend/app/main.py"].replace(
+                '"/app/static/index.html"', repr(str(site / "index.html"))
+            ).replace('"/app/static"', repr(folder))
+            namespace = {}
+            exec(compile(source, "app_main.py", "exec"), namespace)
+            with TestClient(namespace["app"]) as client:
+                self.assertIn("Application UI", client.get("/").text)
+                self.assertEqual(client.get("/api/applications").json(), {"items": []})
+
     def test_existing_routes_and_custom_layouts_are_unchanged(self):
         for extra in [
             'app.mount("/", static_app)\n',

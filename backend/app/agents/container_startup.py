@@ -6,6 +6,43 @@ import posixpath
 import re
 
 
+def _normalize_generated_asgi_wrapper(files: dict[str, str], dockerfile: str) -> str:
+    """Remove the known invalid multiline echo wrapper and run the real FastAPI app."""
+    if "backend/app/main.py" not in files:
+        return dockerfile
+    pattern = re.compile(
+        r'(?ms)^RUN\s+echo\s+"(?P<source>from fastapi import FastAPI\b.*?)"\s*>\s*main_combined\.py\s*$'
+    )
+    match = pattern.search(dockerfile)
+    if not match:
+        return dockerfile
+    wrapper = match.group("source")
+    if not all(marker in wrapper for marker in (
+        "from app.main import app as api_app",
+        "StaticFiles",
+        "app.mount('/api', api_app)",
+    )):
+        return dockerfile
+    if not re.search(r"(?im)^COPY\s+--from=\S+\s+\S+\s+/app/static/?\s*$", dockerfile):
+        return dockerfile
+
+    def replace_command(command_match: re.Match) -> str:
+        try:
+            command = json.loads(command_match.group(2))
+        except ValueError:
+            return command_match[0]
+        if not isinstance(command, list) or "main_combined:app" not in command:
+            return command_match[0]
+        command = ["app.main:app" if item == "main_combined:app" else item for item in command]
+        return command_match.group(1) + json.dumps(command)
+
+    without_wrapper = dockerfile[:match.start()] + dockerfile[match.end():]
+    rewritten = re.sub(r"(?m)^(CMD\s+)([^\n]+)$", replace_command, without_wrapper)
+    if rewritten == without_wrapper:
+        return dockerfile
+    return rewritten
+
+
 def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
     """Serve a packaged SPA when a FastAPI image copies a frontend build."""
     workdirs = re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage)
@@ -50,6 +87,9 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
         )
         parts = destination.strip("/").split("/")
         if "frontend" in parts and parts[-1] in {"build", "dist", "out"}:
+            static_directory = destination
+            break
+        if parts[-1] == "static":
             static_directory = destination
             break
     if not static_directory:
@@ -210,6 +250,7 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
                 )
         files[path] = requirements
     dockerfile = files.get("Dockerfile", "")
+    dockerfile = _normalize_generated_asgi_wrapper(files, dockerfile)
     # Vite's HTML entry is a build input, outside src/. Complete only the
     # explicit root-package layout; custom roots/stages keep their semantics.
     try:
