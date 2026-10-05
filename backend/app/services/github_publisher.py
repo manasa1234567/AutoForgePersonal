@@ -110,10 +110,7 @@ class GitHubPublisher:
             tree_sha = tree_response.json()["sha"]
             commit_response = await client.post(
                 f"{repo_url}/git/commits", headers=headers,
-                # The active workflow explicitly dispatches the next run from
-                # the default branch, so even old feature branches use current
-                # deployment automation. Avoid a second push-triggered run.
-                json={"message": f"AutoForge: {build.title[:120]}" + (" [skip ci]" if expected_commit else ""), "tree": tree_sha, "parents": [base_sha]},
+                json={"message": f"AutoForge: {build.title[:120]}", "tree": tree_sha, "parents": [base_sha]},
             )
             self._raise_github(commit_response, "create feature branch commit")
             commit_sha = commit_response.json()["sha"]

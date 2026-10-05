@@ -10,9 +10,9 @@ force npm installation, or bypass security review.
    repository's configured default branch).
 2. Wait for **CD - Azure** to deploy the updated AutoForge backend successfully.
 3. Keep the existing production callback secret and GitHub App configuration.
-   No new Azure resource or GitHub App permission is required. The generated-app
-   workflow now requests `actions: write` for its own GitHub token so it can
-   dispatch the next attempt. Organization policies must permit that permission.
+  The GitHub App needs its existing Contents write permission so a repair commit
+  can advance the feature branch. No Actions write permission or new Azure
+  resource is required.
 4. New generated builds use the loop automatically after release approval.
 5. To retry an existing failed build without generating again: open GitHub
    **Actions → Deploy generated app to Azure Container Apps → Run workflow**.
@@ -30,9 +30,9 @@ to the authenticated backend callback.
 The backend records a durable claim per failed commit, then runs Coder with the
 existing files, approved blueprint and error report. Changed files must pass
 Critic and Security review. The publisher advances the same feature branch
-without force-pushing or overwriting a newer commit. The workflow dispatches
-the next attempt from the default branch. Repair commits use `[skip ci]` to
-avoid a duplicate push-triggered deployment.
+without force-pushing or overwriting a newer commit. Its push triggers the next
+deployment workflow run through the normal feature-branch path. Repair commits
+do not use `[skip ci]`, so no separate Actions dispatch is required.
 
 Each build permits at most three repair commits. An unchanged response, failed
 review, model failure, permission failure, or timeout stops with an explicit
