@@ -1,7 +1,68 @@
 """Normalize known invalid startup patterns before artifacts are reviewed."""
 
+import ast
 import json
 import re
+
+
+def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
+    """Complete the known /app backend + frontend/dist layout only.
+
+    Leave custom entrypoints, routers and existing static serving to their author.
+    The API routes stay first; the static mount handles otherwise unmatched paths.
+    """
+    if re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage) != ["/app"]:
+        return
+    if re.search(r"(?im)^ENTRYPOINT\b", final_stage):
+        return
+    commands = re.findall(r"(?m)^CMD\s+([^\n]+)", final_stage)
+    if len(commands) != 1:
+        return
+    try:
+        command = json.loads(commands[0])
+    except ValueError:
+        return
+    if not isinstance(command, list) or command[:4] != ["python", "-m", "uvicorn", "backend.app.main:app"]:
+        return
+    for directory in ("backend", "frontend/dist"):
+        if not re.search(
+            rf"(?im)^COPY\s+--from=\S+\s+/app/{directory}/?\s+(?:\./|/app/)?{directory}/?\s*$",
+            final_stage,
+        ):
+            return
+    if "frontend/index.html" not in files:
+        return
+    path = "backend/app/main.py"
+    source = files.get(path, "")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return
+    if not any(isinstance(node, ast.ImportFrom) and node.module == "fastapi"
+               and any(name.name == "FastAPI" and name.asname is None for name in node.names)
+               for node in tree.body):
+        return
+    if not any(isinstance(node, ast.Assign) and len(node.targets) == 1
+               and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "app"
+               and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
+               and node.value.func.id == "FastAPI" for node in tree.body):
+        return
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr in {"mount", "include_router", "add_route", "add_api_route"}:
+            return
+        if isinstance(node.func.value, ast.Name) and node.func.value.id == "app" and node.func.attr in {"get", "api_route"}:
+            route = node.args[0] if node.args else next((kw.value for kw in node.keywords if kw.arg == "path"), None)
+            if not isinstance(route, ast.Constant) or not isinstance(route.value, str):
+                return
+            if route.value == "/" or "{" in route.value:
+                return
+    files[path] = source.rstrip() + (
+        '\n\n# Serve the packaged UI after API routes, preserving their existing URLs.\n'
+        'from fastapi.staticfiles import StaticFiles as _AutoForgeStaticFiles\n'
+        'app.mount("/", _AutoForgeStaticFiles(directory="/app/frontend/dist", html=True), name="frontend")\n'
+    )
 
 
 def normalize_startup(files: dict[str, str]) -> dict[str, str]:
@@ -86,4 +147,6 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
         return instruction + " " + json.dumps(args)
 
     corrected = re.sub(r"(?m)^(CMD|ENTRYPOINT)\s+([^\n]+)$", fix_instruction, body)
+    if python_image:
+        _mount_unserved_frontend(files, corrected)
     return {**files, "Dockerfile": prefix + corrected}
