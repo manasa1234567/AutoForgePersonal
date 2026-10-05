@@ -107,6 +107,8 @@ Deployment packaging is mandatory for every technology stack. Include a file nam
 
 When previousGeneratedArtifacts and criticAndSandboxFindings identify a security issue, make the smallest complete code change that resolves the finding without hiding it, suppressing the scanner, or weakening security controls. Keep unaffected features and files intact.
 
+For TypeScript forms, keep input data and validation errors separately typed. Error messages must use a string-valued map such as Partial<Record<keyof FormData, string>> for both the errors state and the newErrors variable. Partial<FormData> is incorrect for messages when FormData has boolean or numeric fields. Preserve boolean checkbox values and numeric inputs in the actual form state. Do not use any, ts-ignore, or disable compiler checks to hide errors.
+
 For packaging repairs, inspect the whole container startup chain in one pass: resolve each COPY --from source against that stage's WORKDIR and COPY destinations; install or copy console scripts as well as Python libraries (or invoke installed Python modules with python -m); copy frontend output to the exact directory used by the static server; and proxy frontend API routes to the actual backend port. Do not assume an earlier build stage's working directory carries into the next stage. Keep generated frontend requests consistent with the backend route paths. Do not return HTTP 200 for a missing frontend or failed startup just to satisfy a health check.
 """
 

@@ -699,10 +699,10 @@ def validate_contract(
         )
 
         summary = (
-            "Sandbox validation completed successfully."
+            "Sandbox source checks passed. Application compilation and test execution were not performed."
             if status == "passed"
             else
-            "Sandbox validation completed with blocking findings."
+            "Sandbox source checks found blocking issues. Application compilation and test execution were not performed."
         )
 
         return {

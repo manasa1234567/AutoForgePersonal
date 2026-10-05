@@ -22,6 +22,7 @@ from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .container_job_sandbox import ContainerAppsJobSandbox
 from .spec_agent import SpecAgent
 from .deployment_contract import packaging_issues
+from .typescript_review import form_error_findings
 
 
 @dataclass(frozen=True)
@@ -545,6 +546,15 @@ class CriticAgent:
                             ),
                         )
                     )
+
+        # ---------------------------------------------------------
+        # TYPESCRIPT ERROR MAPS
+        # ---------------------------------------------------------
+
+        type_findings = form_error_findings(artifacts)
+        if type_findings:
+            checks["typescript_error_maps"] = "Failed"
+            findings.extend(type_findings)
 
         # ---------------------------------------------------------
         # CREDENTIAL SCAN
