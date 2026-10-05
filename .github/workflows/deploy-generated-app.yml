@@ -107,6 +107,12 @@ jobs:
           CONTEXT="$APP_DIR"
           PORT=8080
           DOCKERFILE=""
+          EXPECT_FRONTEND=false
+          if find "$APP_DIR" -type f -name index.html \
+              -not -path '*/tests/*' -not -path '*/__tests__/*' -not -path '*/node_modules/*' \
+              -print -quit | grep -q .; then
+            EXPECT_FRONTEND=true
+          fi
           if [[ -f "$APP_DIR/Dockerfile" ]]; then
             PORT=$(awk 'toupper($1)=="EXPOSE" {gsub(/\/tcp|\/udp/, "", $2); print $2; exit}' "$APP_DIR/Dockerfile" | grep -E '^[0-9]+$' || true)
             PORT="${PORT:-8080}"
@@ -250,11 +256,25 @@ jobs:
           fi
           PREFLIGHT_OK=false
           for attempt in {1..30}; do
-            STATUS=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \
-              "http://127.0.0.1:$HOST_PORT/" || true)
-            echo "Container preflight $attempt: HTTP $STATUS"
-            if [[ "$STATUS" == "200" ]]; then
+            RESPONSE_FILE="$RUNNER_TEMP/container-preflight.html"
+            RESPONSE=$(curl -sS --connect-timeout 1 --max-time 2 -o "$RESPONSE_FILE" \
+              -w '%{http_code}|%{content_type}' "http://127.0.0.1:$HOST_PORT/" || true)
+            STATUS="${RESPONSE%%|*}"
+            CONTENT_TYPE="${RESPONSE#*|}"
+            HTML_OK=true
+            if [[ "$EXPECT_FRONTEND" == "true" ]]; then
+              HTML_OK=false
+              if [[ "$CONTENT_TYPE" == text/html* ]] && grep -Eiq '<!doctype html|<html([[:space:]>])' "$RESPONSE_FILE"; then
+                HTML_OK=true
+              fi
+            fi
+            echo "Container preflight $attempt: HTTP $STATUS ($CONTENT_TYPE), frontend HTML=$HTML_OK"
+            if [[ "$STATUS" == "200" && "$HTML_OK" == "true" ]]; then
               PREFLIGHT_OK=true
+              break
+            fi
+            if [[ "$STATUS" == "200" && "$HTML_OK" != "true" ]]; then
+              echo "Generated project includes a frontend, but GET / did not return an HTML document." >&2
               break
             fi
             if ! docker inspect --format '{{.State.Running}}' "$CONTAINER_ID" 2>/dev/null | grep -q true; then

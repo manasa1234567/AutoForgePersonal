@@ -41,11 +41,47 @@ class ContainerStartupTests(unittest.TestCase):
                 self.assertEqual(client.get("/assets/app.js").status_code, 200)
                 self.assertEqual(client.get("/missing").status_code, 404)
 
+    def test_health_root_is_replaced_with_packaged_ui_for_generated_dockerfile(self):
+        files = {
+            "Dockerfile": """FROM node:20 AS frontend-build
+FROM python:3.11-slim AS backend-build
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=backend-build /backend/app ./app
+COPY --from=frontend-build /frontend/dist ./frontend/dist
+EXPOSE 8080
+CMD python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --proxy-headers
+""",
+            "frontend/index.html": '<div id="root"></div>',
+            "backend/app/main.py": '''from fastapi import FastAPI
+app = FastAPI()
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+@app.get("/api/form")
+async def form():
+    return {"form": "ready"}
+''',
+        }
+        fixed = normalize_startup(files)
+        self.assertIn("_autoforge_serve_frontend_root", fixed["backend/app/main.py"])
+        self.assertEqual(normalize_startup(fixed), fixed)
+        with tempfile.TemporaryDirectory() as folder:
+            site = Path(folder)
+            (site / "index.html").write_text('<h1>Application UI</h1>', encoding="utf-8")
+            (site / "assets").mkdir()
+            (site / "assets" / "app.js").write_text('console.log("ready")', encoding="utf-8")
+            namespace = {}
+            source = fixed["backend/app/main.py"].replace('"/app/frontend/dist"', repr(folder))
+            exec(compile(source, "generated_main.py", "exec"), namespace)
+            with TestClient(namespace["app"]) as client:
+                self.assertEqual(client.get("/").text, '<h1>Application UI</h1>')
+                self.assertEqual(client.get("/api/form").json(), {"form": "ready"})
+                self.assertEqual(client.get("/assets/app.js").status_code, 200)
+
     def test_existing_routes_and_custom_layouts_are_unchanged(self):
         for extra in [
-            '@app.get("/")\ndef root():\n    return "existing"\n',
             'app.mount("/", static_app)\n',
-            'app.include_router(router)\n',
             '@app.get("/{path:path}")\ndef fallback(path):\n    return path\n',
         ]:
             files = self.frontend_fixture()
@@ -60,6 +96,11 @@ class ContainerStartupTests(unittest.TestCase):
             files = self.frontend_fixture()
             files["Dockerfile"] = change(files["Dockerfile"])
             self.assertEqual(normalize_startup(files), files)
+        files = self.frontend_fixture()
+        files["backend/app/main.py"] += "app.include_router(router)\n"
+        fixed = normalize_startup(files)
+        self.assertIn("app.include_router(router)", fixed["backend/app/main.py"])
+        self.assertIn('app.mount("/", _AutoForgeStaticFiles', fixed["backend/app/main.py"])
 
     def test_missing_lockfile_and_cra_tool_are_handled_together(self):
         original = {

@@ -6,11 +6,7 @@ import re
 
 
 def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
-    """Complete the known /app backend + frontend/dist layout only.
-
-    Leave custom entrypoints, routers and existing static serving to their author.
-    The API routes stay first; the static mount handles otherwise unmatched paths.
-    """
+    """Serve the packaged SPA for the known /app FastAPI frontend layout."""
     if re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage) != ["/app"]:
         return
     if re.search(r"(?im)^ENTRYPOINT\b", final_stage):
@@ -21,15 +17,24 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
     try:
         command = json.loads(commands[0])
     except ValueError:
+        command = commands[0].strip()
+    if isinstance(command, list):
+        valid_command = command[:4] in (
+            ["python", "-m", "uvicorn", "app.main:app"],
+            ["python", "-m", "uvicorn", "backend.app.main:app"],
+        )
+    else:
+        valid_command = bool(re.match(
+            r"^(?:exec\s+)?(?:python(?:3)?\s+-m\s+uvicorn|uvicorn)\s+(?:app|backend\.app)\.main:app(?:\s|$)",
+            command,
+        ))
+    if not valid_command:
         return
-    if not isinstance(command, list) or command[:4] != ["python", "-m", "uvicorn", "backend.app.main:app"]:
+    if not re.search(
+        r"(?im)^COPY\s+--from=\S+\s+\S*dist/?\s+(?:\./|/app/)?frontend/dist/?\s*$",
+        final_stage,
+    ):
         return
-    for directory in ("backend", "frontend/dist"):
-        if not re.search(
-            rf"(?im)^COPY\s+--from=\S+\s+/app/{directory}/?\s+(?:\./|/app/)?{directory}/?\s*$",
-            final_stage,
-        ):
-            return
     if "frontend/index.html" not in files:
         return
     path = "backend/app/main.py"
@@ -50,17 +55,25 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
-        if node.func.attr in {"mount", "include_router", "add_route", "add_api_route"}:
-            return
+        if isinstance(node.func.value, ast.Name) and node.func.value.id == "app" and node.func.attr == "mount":
+            mount = node.args[0] if node.args else next((kw.value for kw in node.keywords if kw.arg == "path"), None)
+            if isinstance(mount, ast.Constant) and mount.value == "/":
+                return
         if isinstance(node.func.value, ast.Name) and node.func.value.id == "app" and node.func.attr in {"get", "api_route"}:
             route = node.args[0] if node.args else next((kw.value for kw in node.keywords if kw.arg == "path"), None)
             if not isinstance(route, ast.Constant) or not isinstance(route.value, str):
                 return
-            if route.value == "/" or "{" in route.value:
+            if "{" in route.value:
                 return
     files[path] = source.rstrip() + (
-        '\n\n# Serve the packaged UI after API routes, preserving their existing URLs.\n'
+        '\n\n# Serve the packaged UI at / while preserving API routes and static assets.\n'
+        'from fastapi.responses import FileResponse as _AutoForgeFileResponse\n'
         'from fastapi.staticfiles import StaticFiles as _AutoForgeStaticFiles\n'
+        '@app.middleware("http")\n'
+        'async def _autoforge_serve_frontend_root(request, call_next):\n'
+        '    if request.method == "GET" and request.url.path == "/":\n'
+        '        return _AutoForgeFileResponse("/app/frontend/dist/index.html")\n'
+        '    return await call_next(request)\n'
         'app.mount("/", _AutoForgeStaticFiles(directory="/app/frontend/dist", html=True), name="frontend")\n'
     )
 
