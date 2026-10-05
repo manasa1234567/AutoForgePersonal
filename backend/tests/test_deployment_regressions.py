@@ -123,6 +123,22 @@ CMD ["uvicorn", "main:app", "--app-dir", "./", "--port", "8080"]
         self.assertEqual(checks["python_syntax"], "Failed")
         self.assertTrue(findings)
 
+    def test_incompatible_fastapi_and_pydantic_pins_block_review(self):
+        findings, checks = CriticAgent()._local_checks({
+            "Dockerfile": "FROM python:3.11-slim\nEXPOSE 8080\n",
+            "backend/requirements.txt": "fastapi==0.95.2\npydantic==2.1.2\n",
+        })
+        self.assertEqual(checks["python_dependency_compatibility"], "Failed")
+        self.assertIn("incompatible", findings[0].issue)
+
+    def test_platform_fastapi_and_pydantic_baseline_passes_review(self):
+        findings, checks = CriticAgent()._local_checks({
+            "Dockerfile": "FROM python:3.11-slim\nEXPOSE 8080\n",
+            "backend/requirements.txt": "fastapi==0.115.12\npydantic==2.11.3\n",
+        })
+        self.assertEqual(checks["python_dependency_compatibility"], "Passed")
+        self.assertFalse(any("incompatible" in finding.issue for finding in findings))
+
     def test_missing_explicit_manifest_is_caught_before_docker_build(self):
         artifacts = {"Dockerfile": "FROM node:22\nCOPY frontend/package.json frontend/package-lock.json* ./\nEXPOSE 8080\n"}
         self.assertEqual(missing_copy_sources(artifacts), ["frontend/package.json"])

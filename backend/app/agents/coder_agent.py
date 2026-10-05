@@ -103,6 +103,8 @@ class CoderAgent:
         instructions += """
 
 Deployment packaging is mandatory for every technology stack. Include a file named exactly Dockerfile at the project root. It must install and build the complete approved application, including its frontend and backend when both are selected, start the application without an interactive shell, listen on 0.0.0.0 port 8080, and contain EXPOSE 8080. Do not assume React, Node.js, or any other specific framework. Include every dependency manifest, lock file, configuration file, and startup file required for docker build and container startup. Every runtime dependency must be installed in or copied into the final image stage; do not install dependencies only in a discarded build stage. Verify that CMD or ENTRYPOINT references a module or executable that exists at its final-image path. Configure database and external-service connections through environment variables; never embed credentials. The container must start and return HTTP 200 at / even when an optional external database or service is not configured; keep the UI available and report the unavailable integration only when an affected operation is used. The root Dockerfile is the deployment interface used by Azure Container Apps.
+
+For Python projects, use real, mutually compatible package releases and never guess exact dependency versions. For FastAPI applications, use the platform-tested baseline fastapi==0.115.12, uvicorn[standard]==0.34.2, and pydantic==2.11.3 unless the approved stack requires a compatible alternative. FastAPI versions below 0.100 do not support Pydantic 2.
 """
         instructions += """
 

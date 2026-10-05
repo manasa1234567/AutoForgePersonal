@@ -258,6 +258,7 @@ class CriticAgent:
             "artifact_count": "Passed",
             "artifact_size": "Passed",
             "deployment_contract": "Passed",
+            "python_dependency_compatibility": "Not applicable",
             "python_syntax": "Not applicable",
             "json_syntax": "Not applicable",
             "yaml_syntax": "Not applicable",
@@ -343,6 +344,41 @@ class CriticAgent:
             checks["artifacts"] = "Failed"
 
             return findings, checks
+
+        # ---------------------------------------------------------
+        # PYTHON FRAMEWORK COMPATIBILITY
+        # ---------------------------------------------------------
+
+        for path, content in artifacts.items():
+            if path.rsplit("/", 1)[-1] != "requirements.txt":
+                continue
+            fastapi_pin = re.search(
+                r"(?im)^\s*fastapi(?:\[[^\]]+\])?\s*==\s*([0-9]+(?:\.[0-9]+){1,2})\s*(?:#.*)?$",
+                content,
+            )
+            pydantic_pin = re.search(
+                r"(?im)^\s*pydantic(?:\[[^\]]+\])?\s*==\s*([0-9]+(?:\.[0-9]+){1,2})\s*(?:#.*)?$",
+                content,
+            )
+            if not fastapi_pin or not pydantic_pin:
+                continue
+            checks["python_dependency_compatibility"] = "Passed"
+            fastapi_version = tuple(int(part) for part in fastapi_pin.group(1).split("."))
+            pydantic_major = int(pydantic_pin.group(1).split(".", 1)[0])
+            if fastapi_version < (0, 100) and pydantic_major >= 2:
+                checks["python_dependency_compatibility"] = "Failed"
+                findings.append(CriticFinding(
+                    severity="Critical",
+                    file=path,
+                    issue=(
+                        f"FastAPI {fastapi_pin.group(1)} is incompatible with "
+                        f"Pydantic {pydantic_pin.group(1)}; FastAPI versions below 0.100 require Pydantic 1."
+                    ),
+                    recommendation=(
+                        "Use mutually compatible, published package versions. For the platform-tested "
+                        "baseline, use fastapi==0.115.12 and pydantic==2.11.3."
+                    ),
+                ))
 
         # ---------------------------------------------------------
         # DEPLOYMENT CONTRACT

@@ -110,6 +110,34 @@ class ContainerStartupTests(unittest.TestCase):
         files["backend/requirements.txt"] += "pydantic[email]\n"
         self.assertEqual(normalize_startup(files), files)
 
+    def test_fastapi_and_pydantic_pins_use_platform_tested_pair(self):
+        files = {
+            "backend/requirements.txt": "fastapi==0.95.2\npydantic==2.1.2\n",
+        }
+        fixed = normalize_startup(files)
+        self.assertEqual(
+            fixed["backend/requirements.txt"],
+            "fastapi==0.115.12\npydantic==2.11.3\n",
+        )
+        self.assertEqual(normalize_startup(fixed), fixed)
+
+    def test_compatible_fastapi_and_pydantic_pins_are_preserved(self):
+        files = {
+            "backend/requirements.txt": "fastapi==0.115.12\npydantic==2.11.3\n",
+        }
+        self.assertEqual(normalize_startup(files), files)
+
+    def test_email_validator_addition_is_preserved_with_dependency_fix(self):
+        files = {
+            "backend/app/main.py": "from pydantic import EmailStr\n",
+            "backend/requirements.txt": "fastapi==0.95.2\npydantic==2.1.2\n",
+        }
+        fixed = normalize_startup(files)
+        self.assertEqual(
+            fixed["backend/requirements.txt"],
+            "fastapi==0.115.12\npydantic==2.11.3\nemail-validator\n",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

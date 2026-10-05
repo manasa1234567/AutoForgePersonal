@@ -103,7 +103,32 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
             requirements,
         )
         if uses_email and not has_dependency:
-            files[path] = requirements.rstrip() + "\nemail-validator\n"
+            requirements = requirements.rstrip() + "\nemail-validator\n"
+        fastapi_pin = re.search(
+            r"(?im)^\s*fastapi(?:\[[^\]]+\])?\s*==\s*([0-9]+(?:\.[0-9]+){1,2})\b",
+            requirements,
+        )
+        pydantic_pin = re.search(
+            r"(?im)^\s*pydantic(?:\[[^\]]+\])?\s*==\s*([0-9]+(?:\.[0-9]+){1,2})\b",
+            requirements,
+        )
+        if fastapi_pin and pydantic_pin:
+            fastapi_version = tuple(int(part) for part in fastapi_pin.group(1).split("."))
+            pydantic_version = pydantic_pin.group(1)
+            incompatible_pair = fastapi_version < (0, 100) and int(pydantic_version.split(".", 1)[0]) >= 2
+            unavailable_pin = pydantic_version == "2.1.2"
+            if incompatible_pair or unavailable_pin:
+                requirements = re.sub(
+                    r"(?im)^(\s*fastapi(?:\[[^\]]+\])?\s*==)[^\s;#]+",
+                    r"\g<1>0.115.12",
+                    requirements,
+                )
+                requirements = re.sub(
+                    r"(?im)^(\s*pydantic(?:\[[^\]]+\])?\s*==)[^\s;#]+",
+                    r"\g<1>2.11.3",
+                    requirements,
+                )
+        files[path] = requirements
     dockerfile = files.get("Dockerfile", "")
     # Only normalize standalone installs. Compound commands and flags retain
     # their authored semantics. Never fall back after a locked install fails.
