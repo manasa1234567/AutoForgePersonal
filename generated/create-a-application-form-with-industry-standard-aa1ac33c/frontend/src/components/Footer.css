@@ -1,0 +1,18 @@
+.app-footer {
+  background-color: #334155;
+  color: #d1d5db;
+  text-align: center;
+  padding: 1rem 0.5rem;
+  font-size: 0.875rem;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-footer .container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.app-footer p {
+  margin: 0.3rem 0;
+}

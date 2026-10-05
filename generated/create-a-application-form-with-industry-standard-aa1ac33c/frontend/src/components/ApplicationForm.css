@@ -1,0 +1,90 @@
+.application-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-section {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  background-color: #f8fafc;
+}
+
+.form-section h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+  color: #334155;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.75rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: #1e293b;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="tel"],
+.form-group input[type="date"],
+.form-group input[type="number"],
+.form-group select,
+.form-group textarea {
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.form-group input[type="file"] {
+  padding: 0.3rem 0.25rem;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: 3px solid #2563eb;
+  border-color: #2563eb;
+}
+
+.error-message {
+  color: #dc2626;
+  font-size: 0.875rem;
+  margin-top: 0.2rem;
+}
+
+.agreement-section {
+  border: none;
+  padding: 0 0.5rem;
+}
+
+.checkbox-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  display: flex;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+}
+
+.checkbox-group label {
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-group a {
+  color: #2563eb;
+  text-decoration: underline;
+}
