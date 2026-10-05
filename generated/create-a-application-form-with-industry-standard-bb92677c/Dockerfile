@@ -3,8 +3,14 @@
 # Build frontend
 FROM node:20-alpine as frontend-build
 WORKDIR /app
+
+# Copy package files
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+
+# Use legacy-peer-deps to avoid dependency conflict errors with react-scripts@5
+RUN npm install --legacy-peer-deps
+
+# Copy source code
 COPY frontend/ ./frontend/
 WORKDIR /app/frontend
 RUN npm run build
@@ -24,9 +30,8 @@ COPY backend/ ./backend/
 COPY --from=frontend-build /app/frontend/build/ ./backend/static/
 
 # Use Uvicorn to run backend and serve frontend static files
-# The FastAPI backend will serve the static frontend
-ENV HOST 0.0.0.0
-ENV PORT 8080
+ENV HOST=0.0.0.0
+ENV PORT=8080
 
 EXPOSE 8080
 
