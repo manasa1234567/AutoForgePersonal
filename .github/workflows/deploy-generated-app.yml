@@ -230,6 +230,32 @@ jobs:
             DOCKERFILE="$CONTEXT/Dockerfile"
           fi
 
+          # CRA requires public/index.html. Older generated branches can contain
+          # a Vite-style frontend/index.html but omit CRA's required template.
+          for FRONTEND_ROOT in "$APP_DIR" "$APP_DIR/frontend"; do
+            if [[ -f "$FRONTEND_ROOT/package.json" ]] && \
+                jq -e '.scripts.build | strings | test("^react-scripts( |$)")' "$FRONTEND_ROOT/package.json" >/dev/null && \
+                [[ ! -f "$FRONTEND_ROOT/public/index.html" ]]; then
+              mkdir -p "$FRONTEND_ROOT/public"
+              cat > "$FRONTEND_ROOT/public/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Generated Application</title>
+          </head>
+          <body>
+            <noscript>This application requires JavaScript.</noscript>
+            <div id="root"></div>
+          </body>
+          </html>
+          HTML
+            EXPECT_FRONTEND=true
+              echo "Added missing CRA public/index.html for $FRONTEND_ROOT"
+            fi
+          done
+
           if [[ -z "$DOCKERFILE" || ! -f "$DOCKERFILE" ]]; then
             echo "AutoForge could not resolve a Dockerfile for the generated application." >&2
             exit 1

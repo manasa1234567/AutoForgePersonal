@@ -116,6 +116,24 @@ async def form():
         self.assertEqual(json.loads(fixed["package.json"])["devDependencies"]["react-scripts"], "5.0.1")
         self.assertEqual(normalize_startup(fixed), fixed)
 
+    def test_cra_build_gets_public_index_when_missing(self):
+        files = {
+            "frontend/package.json": json.dumps({"scripts": {"build": "react-scripts build"}}),
+            "frontend/index.html": '<div id="root"></div><script type="module" src="/src/main.tsx"></script>',
+        }
+        fixed = normalize_startup(files)
+        self.assertIn("frontend/public/index.html", fixed)
+        self.assertIn('<div id="root"></div>', fixed["frontend/public/index.html"])
+        self.assertNotIn("type=\"module\"", fixed["frontend/public/index.html"])
+        self.assertEqual(normalize_startup(fixed), fixed)
+
+    def test_existing_cra_public_index_is_preserved(self):
+        files = {
+            "frontend/package.json": json.dumps({"scripts": {"build": "react-scripts build"}}),
+            "frontend/public/index.html": "<!doctype html><div id=\"root\"></div>",
+        }
+        self.assertEqual(normalize_startup(files), files)
+
     def test_locked_manifest_and_custom_install_flags_are_preserved(self):
         files = {"Dockerfile": "FROM node:22\nRUN npm ci --omit=dev\n",
                  "package.json": '{"scripts":{"build":"react-scripts build"}}',

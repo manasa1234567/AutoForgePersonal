@@ -277,9 +277,9 @@
       </section>
 
       <aside class="panel timeline-panel">
-        <div class="panel-heading"><div><span class="panel-kicker">AUDIT TRAIL</span><h2>Build Timeline</h2><p>Critical operations are auditable</p></div><span class="audit-count">{{ currentBuild.audit.length }}</span></div>
+        <div class="panel-heading"><div><span class="panel-kicker">AUDIT TRAIL</span><h2>Build Timeline</h2><p>Critical operations are auditable</p></div><div class="timeline-heading-actions">@if (currentBuild.audit.length > 9) { <button class="timeline-toggle" type="button" [attr.aria-expanded]="showAllTimeline" (click)="showAllTimeline = !showAllTimeline">{{ showAllTimeline ? 'Show recent' : 'Show all' }}</button> }<span class="audit-count">{{ currentBuild.audit.length }}</span></div></div>
         <div class="timeline-list">
-          @for (event of currentBuild.audit.slice(-9).reverse(); track $index) {
+          @for (event of visibleTimelineEvents; track $index) {
             <div class="timeline-event" [class.warning]="event.severity === 'warning'" [class.error]="event.severity === 'error'"><time>{{ event.time }}</time><span class="timeline-dot"></span><div><strong>{{ event.stage }}</strong><p>{{ event.message }}</p><small>{{ event.agent ?? 'Orchestrator' }}</small></div></div>
           }
         </div>

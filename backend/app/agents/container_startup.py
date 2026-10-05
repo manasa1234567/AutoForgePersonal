@@ -112,6 +112,19 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
                 and root + "package-lock.json" not in files and root + "npm-shrinkwrap.json" not in files):
             package["devDependencies"] = {**dev_dependencies, "react-scripts": "5.0.1"}
             files[path] = json.dumps(package, indent=2) + "\n"
+        cra_build = any(
+            isinstance(script, str) and re.match(r"^react-scripts(?:\s|$)", script)
+            for script in scripts.values()
+        )
+        if cra_build and root + "public/index.html" not in files:
+            files[root + "public/index.html"] = (
+                '<!doctype html>\n<html lang="en">\n<head>\n'
+                '  <meta charset="utf-8" />\n'
+                '  <meta name="viewport" content="width=device-width, initial-scale=1" />\n'
+                '  <title>Generated Application</title>\n'
+                '</head>\n<body>\n  <noscript>This application requires JavaScript.</noscript>\n'
+                '  <div id="root"></div>\n</body>\n</html>\n'
+            )
     # Pydantic's EmailStr loads this optional dependency at model creation.
     for path, requirements in list(files.items()):
         if path.rsplit("/", 1)[-1] != "requirements.txt":

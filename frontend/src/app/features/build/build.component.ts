@@ -61,6 +61,7 @@ export class BuildComponent implements OnInit {
   isPreparingDeployment = false;
   isRefiningRequirements = false;
   refineMessage: string | null = null;
+  showAllTimeline = false;
 
   readonly stages = ['Understand', 'Design', 'Forge', 'Prove', 'Release'] as const;
 
@@ -270,6 +271,11 @@ export class BuildComponent implements OnInit {
 
     return this.build?.agents.find((agent) => agent.status === 'Running');
 
+  }
+
+  get visibleTimelineEvents() {
+    const events = this.build?.audit ?? [];
+    return (this.showAllTimeline ? events : events.slice(-9)).slice().reverse();
   }
 
 
