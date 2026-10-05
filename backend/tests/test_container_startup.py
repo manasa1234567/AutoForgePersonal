@@ -129,7 +129,10 @@ async def form():
 
     def test_existing_cra_public_index_is_preserved(self):
         files = {
-            "frontend/package.json": json.dumps({"scripts": {"build": "react-scripts build"}}),
+            "frontend/package.json": json.dumps({
+                "scripts": {"build": "react-scripts build"},
+                "devDependencies": {"react-scripts": "5.0.1"},
+            }),
             "frontend/public/index.html": "<!doctype html><div id=\"root\"></div>",
         }
         self.assertEqual(normalize_startup(files), files)
@@ -137,7 +140,8 @@ async def form():
     def test_locked_manifest_and_custom_install_flags_are_preserved(self):
         files = {"Dockerfile": "FROM node:22\nRUN npm ci --omit=dev\n",
                  "package.json": '{"scripts":{"build":"react-scripts build"}}',
-                 "package-lock.json": '{}'}
+                 "package-lock.json": '{}',
+                 "public/index.html": '<!doctype html><div id="root"></div>'}
         self.assertEqual(normalize_startup(files), files)
 
     def test_actual_failed_command_is_corrected_before_review(self):
