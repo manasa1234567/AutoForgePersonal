@@ -53,8 +53,16 @@
         @if (currentBuild.status === 'Running' && currentBuild.stage !== 'Understand') {
           <div class="analysis-loading approval-progress" role="status" aria-live="polite">
             <div class="spinner" aria-hidden="true"></div>
-            <h3>Approval received — workflow is in progress</h3>
-            <p>The active agent is working. This page will update when the current step is ready.</p>
+            @if (currentBuild.deploymentRepairing) {
+              <h3>Repairing and rebuilding the generated app</h3>
+              <p>Deployment repair {{ currentBuild.deploymentRepairAttempts }} of 3 is being reviewed and rebuilt. This page will update when deployment succeeds or fails.</p>
+            } @else if (currentBuild.deploymentStatus === 'running') {
+              <h3>Deploying the generated app</h3>
+              <p>The container is being built, started, and checked. This page will show the live URL or the deployment error when finished.</p>
+            } @else {
+              <h3>Approval received — workflow is in progress</h3>
+              <p>The active agent is working. This page will update when the current step is ready.</p>
+            }
           </div>
         }
 

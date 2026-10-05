@@ -3,7 +3,7 @@
 import { CommonModule } from '@angular/common';
 
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { interval, startWith, switchMap, takeWhile } from 'rxjs';
+import { EMPTY, catchError, interval, startWith, switchMap, takeWhile } from 'rxjs';
 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -96,7 +96,13 @@ export class BuildComponent implements OnInit {
 
       startWith(0),
 
-      switchMap(() => this.api.getBuild(buildId)),
+      switchMap(() => this.api.getBuild(buildId).pipe(
+        catchError((error: unknown) => {
+          this.loadError = this.describeError(error, 'Unable to refresh build status; retrying automatically.');
+          this.cdr.markForCheck();
+          return EMPTY;
+        }),
+      )),
 
 
 
@@ -123,6 +129,7 @@ export class BuildComponent implements OnInit {
       next: (build) => {
 
         this.build = build;
+        this.loadError = null;
         if (build.blueprint && !this.blueprintDraft) {
 
           this.blueprintDraft = this.toBlueprintUpdate(build.blueprint);
@@ -431,13 +438,20 @@ export class BuildComponent implements OnInit {
     interval(1500)
       .pipe(
         startWith(0),
-        switchMap(() => this.api.getBuild(buildId)),
+        switchMap(() => this.api.getBuild(buildId).pipe(
+          catchError((error: unknown) => {
+            this.loadError = this.describeError(error, 'Unable to refresh build status; retrying automatically.');
+            this.cdr.markForCheck();
+            return EMPTY;
+          }),
+        )),
         takeWhile((updatedBuild) => updatedBuild.status === 'Running', true),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
         next: (updatedBuild) => {
           this.build = updatedBuild;
+          this.loadError = null;
           if (updatedBuild.status !== 'Running') {
             this.approvingGate = null;
             this.loadError = updatedBuild.status === 'Failed'
