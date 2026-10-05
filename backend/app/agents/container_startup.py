@@ -82,6 +82,17 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
         if not all(isinstance(item, dict) for item in (scripts, dependencies, dev_dependencies)):
             continue
         root = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+        # This exact generated pin is unpublished. 4.0.4 is published and
+        # declares Vite ^4.2.0 as its peer. Do not rewrite other versions/locks.
+        vite = dev_dependencies.get("vite", dependencies.get("vite", ""))
+        locked = any(root + name in files for name in (
+            "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb"
+        ))
+        if isinstance(vite, str) and re.fullmatch(r"4\.(?:[2-9]|[1-9][0-9]+)\.\d+", vite) and not locked:
+            for section in ("dependencies", "devDependencies"):
+                if package.get(section, {}).get("@vitejs/plugin-react") == "4.0.9":
+                    package[section]["@vitejs/plugin-react"] = "4.0.4"
+                    files[path] = json.dumps(package, indent=2) + "\n"
         # Complete a declared CRA build only when no lockfile needs updating.
         if (any(isinstance(script, str) and re.match(r"^react-scripts\s", script) for script in scripts.values())
                 and "react-scripts" not in dependencies and "react-scripts" not in dev_dependencies
@@ -130,6 +141,26 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
                 )
         files[path] = requirements
     dockerfile = files.get("Dockerfile", "")
+    # Vite's HTML entry is a build input, outside src/. Complete only the
+    # explicit root-package layout; custom roots/stages keep their semantics.
+    try:
+        root_package = json.loads(files.get("package.json", "{}"))
+    except ValueError:
+        root_package = {}
+    if (isinstance(root_package, dict) and isinstance(root_package.get("scripts"), dict)
+            and root_package["scripts"].get("build") == "vite build" and "index.html" in files):
+        sections = re.split(r"(?im)(?=^FROM\s)", dockerfile)
+        for index, section in enumerate(sections):
+            if (re.match(r"(?i)^FROM\s+node:", section)
+                    and len(re.findall(r"(?im)^WORKDIR\s+", section)) == 1
+                    and re.search(r"(?m)^COPY package\.json \.\s*$", section)
+                    and re.search(r"(?m)^RUN npm run build\s*$", section)
+                    and not re.search(r"(?im)^COPY[^\n]*(?:index\.html|\*)", section)
+                    and not re.search(r"(?im)^COPY\s+\.\s", section)):
+                sections[index] = re.sub(
+                    r"(?m)^(COPY src \./src)[ \t]*$", r"\1\nCOPY index.html ./", section
+                )
+        dockerfile = "".join(sections)
     # Only normalize standalone installs. Compound commands and flags retain
     # their authored semantics. Never fall back after a locked install fails.
     dockerfile = re.sub(
