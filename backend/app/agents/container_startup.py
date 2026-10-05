@@ -2,12 +2,14 @@
 
 import ast
 import json
+import posixpath
 import re
 
 
 def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
     """Serve a packaged SPA when a FastAPI image copies a frontend build."""
-    if re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage) != ["/app"]:
+    workdirs = re.findall(r"(?im)^WORKDIR\s+(\S+)\s*$", final_stage)
+    if workdirs != ["/app"]:
         return
     if re.search(r"(?im)^ENTRYPOINT\b", final_stage):
         return
@@ -41,10 +43,14 @@ def _mount_unserved_frontend(files: dict[str, str], final_stage: str) -> None:
         copy = re.match(r"(?i)^COPY\s+--from=\S+\s+\S+\s+(\S+)\s*$", line.strip())
         if not copy:
             continue
-        destination = copy.group(1).rstrip("/")
+        raw_destination = copy.group(1)
+        destination = posixpath.normpath(
+            raw_destination if raw_destination.startswith("/")
+            else posixpath.join(workdirs[-1], raw_destination)
+        )
         parts = destination.strip("/").split("/")
         if "frontend" in parts and parts[-1] in {"build", "dist", "out"}:
-            static_directory = "/" + destination.strip("/")
+            static_directory = destination
             break
     if not static_directory:
         return
