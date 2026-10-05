@@ -449,7 +449,6 @@ const ApplicationForm: React.FC = () => {
                   helperText={entryErrors.end_date}
                   InputLabelProps={{ shrink: true }}
                   fullWidth
-                  // optional
                 />
               </Grid>
             </Grid>
