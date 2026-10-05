@@ -183,6 +183,27 @@ async def form():
             "fastapi==0.115.12\npydantic==2.11.3\nemail-validator\n",
         )
 
+    def test_pydantic_v2_constr_uses_pattern_keyword(self):
+        files = {
+            "backend/requirements.txt": "pydantic==2.11.3\n",
+            "backend/main.py": (
+                "from pydantic import BaseModel, constr\n"
+                "class Entry(BaseModel):\n"
+                "    start_date: constr(regex=r'^\\d{4}-\\d{2}-\\d{2}$')\n"
+            ),
+        }
+        fixed = normalize_startup(files)
+        self.assertIn("constr(pattern=", fixed["backend/main.py"])
+        self.assertNotIn("constr(regex=", fixed["backend/main.py"])
+        self.assertEqual(normalize_startup(fixed), fixed)
+
+    def test_pydantic_v1_constr_keeps_regex_keyword(self):
+        files = {
+            "backend/requirements.txt": "pydantic==1.10.26\n",
+            "backend/main.py": "from pydantic import constr\nvalue = constr(regex='a')\n",
+        }
+        self.assertEqual(normalize_startup(files), files)
+
 
 if __name__ == "__main__":
     unittest.main()

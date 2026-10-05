@@ -128,6 +128,20 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
         )
         if uses_email and not has_dependency:
             requirements = requirements.rstrip() + "\nemail-validator\n"
+        pydantic_v2 = bool(re.search(
+            r"(?im)^\s*pydantic(?:\[[^\]]*\])?\s*(?:==|~=|>=|>)\s*2(?:\.|\s|$)",
+            requirements,
+        ))
+        if pydantic_v2:
+            for source_path, source in list(files.items()):
+                if source_path.startswith(root) and source_path.endswith(".py"):
+                    corrected = re.sub(
+                        r"(\bconstr\s*\([^)]*?)\bregex\s*=",
+                        r"\1pattern=",
+                        source,
+                    )
+                    if corrected != source:
+                        files[source_path] = corrected
         fastapi_pin = re.search(
             r"(?im)^\s*fastapi(?:\[[^\]]+\])?\s*==\s*([0-9]+(?:\.[0-9]+){1,2})\b",
             requirements,
