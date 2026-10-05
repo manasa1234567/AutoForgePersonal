@@ -170,6 +170,13 @@
                 @if (proof.requirementCoverage.length > 0) { <div class="analysis-grid"><div><strong>Requirement coverage review</strong>@for (item of proof.requirementCoverage; track $index) { <span>{{ item }}</span> }</div></div> }
                 @if (proof.testPlan.length > 0) { <div class="analysis-grid"><div><strong>Sandbox test plan</strong>@for (item of proof.testPlan; track $index) { <span>{{ item }}</span> }</div></div> }
                 <p class="blueprint-edit-hint">This run's generated files were not executed. Skill promotion stays blocked until isolated runtime checks pass.</p>
+                @if (currentBuild.approvalGate === 'artifacts') {
+                  <div class="approval-banner">
+                    <div><strong>Review updated artifacts</strong><span>Security remediation changed the generated files. Review the updated project before Critic validation continues.</span></div>
+                    @if (artifactsZipUrl; as zipUrl) { <a class="secondary-button" [href]="zipUrl" download>Download updated project ZIP</a> }
+                    <button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('artifacts')">{{ approvingGate === 'artifacts' ? 'Continuing…' : 'Approve updated files and continue →' }}</button>
+                  </div>
+                }
                 <div class="stage-footer">
                   <button
                     class="secondary-button"
