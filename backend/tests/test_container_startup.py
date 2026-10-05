@@ -6,6 +6,22 @@ from app.agents.container_startup import normalize_startup
 
 
 class ContainerStartupTests(unittest.TestCase):
+    def test_missing_lockfile_and_cra_tool_are_handled_together(self):
+        original = {
+            "Dockerfile": "FROM node:18\nRUN npm ci\nEXPOSE 8080\n",
+            "package.json": json.dumps({"scripts": {"build": "react-scripts build"}, "dependencies": {"react": "18.2.0"}}),
+        }
+        fixed = CoderAgent._validate_deployment_contract(original)
+        self.assertIn("then npm ci; else npm install; fi", fixed["Dockerfile"])
+        self.assertEqual(json.loads(fixed["package.json"])["devDependencies"]["react-scripts"], "5.0.1")
+        self.assertEqual(normalize_startup(fixed), fixed)
+
+    def test_locked_manifest_and_custom_install_flags_are_preserved(self):
+        files = {"Dockerfile": "FROM node:22\nRUN npm ci --omit=dev\n",
+                 "package.json": '{"scripts":{"build":"react-scripts build"}}',
+                 "package-lock.json": '{}'}
+        self.assertEqual(normalize_startup(files), files)
+
     def test_actual_failed_command_is_corrected_before_review(self):
         command = "uvicorn app.main:app --host 0.0.0.0 --port 8000 & nginx -g 'daemon off;' --no-daemon"
         files = {"Dockerfile": "FROM python:3.11-slim\nEXPOSE 8080\nCMD " + json.dumps(["/bin/sh", "-c", command])}

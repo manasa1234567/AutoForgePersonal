@@ -6,6 +6,27 @@ import re
 
 def normalize_startup(files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
+    for path, content in list(files.items()):
+        if path.rsplit("/", 1)[-1] != "package.json":
+            continue
+        try:
+            package = json.loads(content)
+        except ValueError:
+            continue
+        if not isinstance(package, dict):
+            continue
+        scripts = package.get("scripts", {})
+        dependencies = package.get("dependencies", {})
+        dev_dependencies = package.get("devDependencies", {})
+        if not all(isinstance(item, dict) for item in (scripts, dependencies, dev_dependencies)):
+            continue
+        root = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+        # Complete a declared CRA build only when no lockfile needs updating.
+        if (any(isinstance(script, str) and re.match(r"^react-scripts\s", script) for script in scripts.values())
+                and "react-scripts" not in dependencies and "react-scripts" not in dev_dependencies
+                and root + "package-lock.json" not in files and root + "npm-shrinkwrap.json" not in files):
+            package["devDependencies"] = {**dev_dependencies, "react-scripts": "5.0.1"}
+            files[path] = json.dumps(package, indent=2) + "\n"
     # Pydantic's EmailStr loads this optional dependency at model creation.
     for path, requirements in list(files.items()):
         if path.rsplit("/", 1)[-1] != "requirements.txt":
@@ -23,6 +44,13 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
         if uses_email and not has_dependency:
             files[path] = requirements.rstrip() + "\nemail-validator\n"
     dockerfile = files.get("Dockerfile", "")
+    # Only normalize standalone installs. Compound commands and flags retain
+    # their authored semantics. Never fall back after a locked install fails.
+    dockerfile = re.sub(
+        r"(?m)^RUN npm ci\s*$",
+        "RUN if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; else npm install; fi",
+        dockerfile,
+    )
     stages = list(re.finditer(r"(?im)^FROM\s+([^\s]+)[^\n]*", dockerfile))
     if not stages:
         return files
