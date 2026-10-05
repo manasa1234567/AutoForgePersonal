@@ -41,3 +41,96 @@ def missing_copy_sources(artifacts: dict[str, str]) -> list[str]:
             if source not in missing:
                 missing.append(source)
     return missing
+
+
+def stage_copy_issues(artifacts: dict[str, str]) -> list[str]:
+    """Recognize misplaced copies of literal directories in earlier stages.
+
+    This is deliberately not a Docker interpreter. Only track local directory
+    COPY instructions with explicit WORKDIR, and invalidate that evidence after
+    RUN/ADD or unsupported syntax. Build outputs and external images are left
+    to Docker. Never compare a container import path with a repository path.
+    """
+    stages: dict[str, set[str]] = {}
+    opaque_stages: set[int] = set()
+    known: set[str] = set()
+    workdir: str | None = None
+    stage_number = -1
+    issues: list[str] = []
+    dockerfile = re.sub(r"\\\r?\n", " ", artifacts.get("Dockerfile", ""))
+    for line in dockerfile.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, value = line.partition(" ")
+        instruction = instruction.upper()
+        value = value.strip()
+        if instruction == "FROM":
+            stage_number += 1
+            known = set()
+            workdir = None
+            stages[str(stage_number)] = known
+            alias = re.search(r"(?i)\sAS\s+(\S+)\s*$", value)
+            if alias:
+                stages[alias.group(1).lower()] = known
+        elif instruction == "WORKDIR":
+            if "$" in value or not value:
+                workdir = None
+            elif value.startswith("/") or workdir:
+                workdir = posixpath.normpath(posixpath.join(workdir or "/", value))
+        elif instruction in {"RUN", "ADD", "ONBUILD"}:
+            # Commands can create, move or delete directories: stop inferring.
+            known.clear()
+            # A dependency-only pip command before source copying is common.
+            # Other commands may create a second valid source directory.
+            if instruction != "RUN" or not re.fullmatch(
+                r"(?:python(?:3)? -m )?pip(?:3)? install [\w./=\[\],+ :@-]+", value
+            ):
+                opaque_stages.add(id(known))
+        elif instruction == "COPY":
+            from_match = re.match(r"--from=([^\s]+)\s+", value)
+            copy_value = value[from_match.end():] if from_match else value
+            if copy_value.startswith("--") or any(c in copy_value for c in "$*?<<"):
+                known.clear()
+                continue
+            try:
+                parts = json.loads(copy_value) if copy_value.startswith("[") else shlex.split(copy_value)
+            except ValueError:
+                known.clear()
+                continue
+            if not isinstance(parts, list) or len(parts) != 2 or not all(isinstance(p, str) for p in parts):
+                known.clear()
+                continue
+            source, destination = parts
+            if from_match:
+                earlier = stages.get(from_match.group(1).lower(), set())
+                source_path = posixpath.normpath("/" + source.lstrip("/"))
+                candidates = [path for path in earlier if posixpath.basename(path) == posixpath.basename(source_path)]
+                if id(earlier) not in opaque_stages and source_path not in earlier and len(candidates) == 1:
+                    issues.append(
+                        f"COPY --from={from_match.group(1)} requests {source_path}, "
+                        f"but the source directory was copied to {candidates[0]} in that stage. "
+                        "Use the actual stage path or explicitly create the requested path."
+                    )
+                continue
+            source_path = posixpath.normpath(source.lstrip("/"))
+            prefix = "" if source_path == "." else source_path + "/"
+            if workdir and any(path.startswith(prefix) for path in artifacts) and source_path not in artifacts:
+                target = posixpath.normpath(posixpath.join(workdir, destination))
+                known.add(target)
+                # Directory COPY includes nested directories as well.
+                for path in artifacts:
+                    if not path.startswith(prefix):
+                        continue
+                    relative = posixpath.dirname(path[len(prefix):])
+                    while relative:
+                        known.add(posixpath.join(target, relative))
+                        relative = posixpath.dirname(relative)
+    return issues
+
+
+def packaging_issues(artifacts: dict[str, str]) -> list[str]:
+    return [
+        f"Dockerfile COPY requires missing project source: {source}."
+        for source in missing_copy_sources(artifacts)
+    ] + stage_copy_issues(artifacts)

@@ -14,7 +14,7 @@ from .artifact_limits import (
     PREFERRED_ARTIFACT_FILES,
 )
 from .spec_agent import SpecAgent
-from .deployment_contract import missing_copy_sources
+from .deployment_contract import packaging_issues
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,8 @@ Deployment packaging is mandatory for every technology stack. Include a file nam
         instructions += """
 
 When previousGeneratedArtifacts and criticAndSandboxFindings identify a security issue, make the smallest complete code change that resolves the finding without hiding it, suppressing the scanner, or weakening security controls. Keep unaffected features and files intact.
+
+For packaging repairs, inspect the whole container startup chain in one pass: resolve each COPY --from source against that stage's WORKDIR and COPY destinations; install or copy console scripts as well as Python libraries (or invoke installed Python modules with python -m); copy frontend output to the exact directory used by the static server; and proxy frontend API routes to the actual backend port. Do not assume an earlier build stage's working directory carries into the next stage. Keep generated frontend requests consistent with the backend route paths. Do not return HTTP 200 for a missing frontend or failed startup just to satisfy a health check.
 """
 
         try:
@@ -327,9 +329,9 @@ When previousGeneratedArtifacts and criticAndSandboxFindings identify a security
             )
         if re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
             raise ValueError("Coder Agent root Dockerfile must contain EXPOSE 8080")
-        missing = missing_copy_sources(files)
-        if missing:
-            raise ValueError("Dockerfile COPY requires missing project sources: " + ", ".join(missing))
+        issues = packaging_issues(files)
+        if issues:
+            raise ValueError(" ".join(issues))
         return files
 
     @staticmethod

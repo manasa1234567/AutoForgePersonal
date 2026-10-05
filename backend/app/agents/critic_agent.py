@@ -21,7 +21,7 @@ from .artifact_limits import (
 from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .container_job_sandbox import ContainerAppsJobSandbox
 from .spec_agent import SpecAgent
-from .deployment_contract import missing_copy_sources
+from .deployment_contract import packaging_issues
 
 
 @dataclass(frozen=True)
@@ -377,16 +377,17 @@ class CriticAgent:
 
             # Repository paths are not final image paths. Docker's build/startup
             # preflight verifies imports and dependencies after COPY and WORKDIR.
-            for source in missing_copy_sources(artifacts):
+            for issue in packaging_issues(artifacts):
                 checks["deployment_contract"] = "Failed"
                 findings.append(
                     CriticFinding(
                         severity="Critical",
                         file="Dockerfile",
-                        issue=f"Dockerfile COPY requires missing build-context source: {source}.",
+                        issue=issue,
                         recommendation=(
-                            "Include this file or directory in the complete generated artifact set, "
-                            "or correct the COPY source to the actual project path."
+                            "Correct the Dockerfile source path or include the missing source. "
+                            "Resolve stage paths using that stage's WORKDIR and COPY destinations; "
+                            "also check final runtime dependencies, static-server directories, and API routing."
                         ),
                     )
                 )

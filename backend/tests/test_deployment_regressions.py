@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.agents.coder_agent import CoderAgent, CoderResult
 from app.agents.critic_agent import CriticAgent, CriticResult
-from app.agents.deployment_contract import missing_copy_sources
+from app.agents.deployment_contract import missing_copy_sources, stage_copy_issues
 from app.models.schemas import Blueprint, BuildCreate, CriticFinding, ProofResult, SecurityReview
 from app.repositories.build_repository import InMemoryBuildRepository
 from app.services.orchestrator import Orchestrator
@@ -25,6 +25,67 @@ def blueprint():
 
 
 class DeploymentRegressions(unittest.TestCase):
+    def test_wrong_stage_directory_is_returned_to_coder_and_critic(self):
+        files = {
+            "Dockerfile": """FROM python:3.11-slim AS backend-build
+WORKDIR /app/backend
+COPY backend/requirements.txt ./
+RUN pip install -r requirements.txt
+COPY backend/app ./app
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=backend-build /app/app ./app
+EXPOSE 8080
+""",
+            "backend/requirements.txt": "fastapi",
+            "backend/app/main.py": "app = None",
+        }
+        with self.assertRaisesRegex(ValueError, "/app/backend/app"):
+            CoderAgent._validate_deployment_contract(files)
+        findings, checks = CriticAgent()._local_checks(files)
+        self.assertEqual(checks["deployment_contract"], "Failed")
+        self.assertIn("/app/backend/app", findings[0].issue)
+        files["Dockerfile"] = files["Dockerfile"].replace(
+            "--from=backend-build /app/app", "--from=backend-build /app/backend/app"
+        )
+        self.assertEqual(stage_copy_issues(files), [])
+
+    def test_generated_outputs_and_commands_are_not_guessed(self):
+        files = {
+            "Dockerfile": """FROM node:22 AS build
+WORKDIR /app/frontend
+COPY frontend/ ./
+RUN npm run build && mkdir -p /other/frontend
+FROM nginx
+COPY --from=build /other/frontend /site
+COPY --from=build /app/frontend/dist /site
+COPY --from=external /app/frontend /site
+""",
+            "frontend/src/App.tsx": "export default () => null;",
+        }
+        self.assertEqual(stage_copy_issues(files), [])
+
+    def test_numeric_stages_and_json_directory_copy(self):
+        files = {
+            "Dockerfile": 'FROM python:3.11\nWORKDIR /app/backend\nCOPY ["backend/app", "./app"]\nFROM python:3.11\nCOPY --from=0 /app/app /app\n',
+            "backend/app/main.py": "app = None",
+        }
+        self.assertEqual(len(stage_copy_issues(files)), 1)
+
+    def test_run_created_directory_is_not_rejected_after_later_copy(self):
+        files = {
+            "Dockerfile": 'FROM python:3.11 AS build\nWORKDIR /app/backend\nRUN mkdir -p /app/app\nCOPY backend/app ./app\nFROM python:3.11\nCOPY --from=build /app/app /app\n',
+            "backend/app/main.py": "app = None",
+        }
+        self.assertEqual(stage_copy_issues(files), [])
+
+    def test_nested_directory_copied_by_parent_is_known(self):
+        files = {
+            "Dockerfile": 'FROM python:3.11 AS build\nWORKDIR /app\nCOPY backend/ ./backend\nCOPY backend/app /other/app\nFROM python:3.11\nCOPY --from=build /app/backend/app /app\n',
+            "backend/app/main.py": "app = None",
+        }
+        self.assertEqual(stage_copy_issues(files), [])
+
     def test_multistage_copy_can_relocate_uvicorn_module(self):
         artifacts = {
             "Dockerfile": '''FROM python:3.11-slim AS backend-builder
