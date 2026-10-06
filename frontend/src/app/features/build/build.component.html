@@ -48,7 +48,7 @@
           <div class="build-error" role="alert"><strong>Analysis request failed</strong><span>{{ loadError }}</span></div>
         }
         @if (currentBuild.status === 'Failed') {
-          <div class="build-error" role="alert"><strong>Forge stopped</strong><span>{{ currentBuild.error }}</span></div>
+          <div class="build-error" role="alert"><strong>{{ currentBuild.deploymentStatus === 'failed' ? 'Deployment stopped' : 'Forge stopped' }}</strong><span>{{ currentBuild.error }}</span></div>
         }
         @if (currentBuild.status === 'Blocked') {
           <div class="build-error" role="status"><strong>Validation is blocked</strong><span>{{ currentBuild.error }}</span></div>

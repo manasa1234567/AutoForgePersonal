@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.agents.coder_agent import CoderAgent, CoderOutputError, CoderResult
 from app.agents.critic_agent import CriticAgent, CriticResult
-from app.agents.deployment_contract import missing_copy_sources, stage_copy_issues
+from app.agents.deployment_contract import missing_copy_sources, stage_copy_issues, uncopied_startup_issues
 from app.models.schemas import Blueprint, BuildCreate, CriticFinding, DeploymentCallback, ProofResult, SecurityReview
 from app.repositories.build_repository import InMemoryBuildRepository
 from app.services.orchestrator import Orchestrator
@@ -25,6 +25,27 @@ def blueprint():
 
 
 class DeploymentRegressions(unittest.TestCase):
+    def test_root_application_not_copied_with_backend_manifest_is_rejected(self):
+        files = {
+            "Dockerfile": 'FROM python:3.11 AS deps\nCOPY backend/ /app/backend/\n'
+                          'FROM python:3.11\nCOPY --from=deps /app/backend /app/backend\n'
+                          'EXPOSE 8080\nCMD ["python", "-m", "uvicorn", "app.main:app"]\n',
+            "backend/requirements.txt": "fastapi\nuvicorn\n",
+            "app/main.py": "app = None\n",
+        }
+        with self.assertRaisesRegex(ValueError, "not included in any build-context COPY"):
+            CoderAgent._validate_deployment_contract(files)
+        files["Dockerfile"] += 'COPY app/ /app/app/\n'
+        self.assertEqual(uncopied_startup_issues(files), [])
+
+    def test_relocated_dynamic_and_installed_startup_sources_are_not_guessed(self):
+        for copy in ('COPY backend/ /other/\n', 'COPY ["backend/", "/other/"]\n',
+                     'COPY ${SOURCE}/ /other/\n', 'ADD generated.tar /app\n'):
+            files = {"Dockerfile": copy + 'CMD ["uvicorn", "app.main:app"]\n',
+                     "backend/app/main.py": "app = None\n"}
+            self.assertEqual(uncopied_startup_issues(files), [])
+        self.assertEqual(uncopied_startup_issues({"Dockerfile": 'CMD ["uvicorn", "installed.app:app"]'}), [])
+
     def test_failed_generation_retains_diagnostics_without_approving_artifacts(self):
         async def scenario():
             store = Orchestrator(build_repository=SnapshotRepository())

@@ -105,8 +105,21 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
             raise RuntimeError("Automatic repair requires the configured Coder Agent.")
         artifacts = {**previous, **repaired.files}
         if artifacts == previous:
-            detail = "; ".join(item["issue"] for item in feedback[1:])[:500]
-            raise RuntimeError("Coder returned unchanged files; deployment was not retried. " + detail)
+            current = store.get(build_id)
+            if not current.deployment_repairing or current.deployment_commit != callback.commit_sha:
+                return
+            blocker = {
+                "severity": "High", "file": "Dockerfile",
+                "issue": "Coder returned unchanged files; deployment was not retried. "
+                         + clean_diagnostics(callback.diagnostics)[-650:],
+                "recommendation": "Resolve the actual compiler or startup failure before retrying deployment.",
+            }
+            current.deployment_repair_review = _safe_report({
+                "attempt": current.deployment_repair_attempts,
+                "reviewer": "Coder repair validation", "blockers": [blocker],
+            })
+            store._build_repository.save(current)
+            raise RuntimeError(blocker["issue"])
         critic = await store._agent_service.run_critic_agent(
             title=build.title, blueprint=build.blueprint, requirements=build.requirements,
             acceptance_criteria=build.acceptance_criteria, artifacts=artifacts,

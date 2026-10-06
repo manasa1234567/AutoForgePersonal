@@ -9,6 +9,40 @@ from app.services.deployment_repair import repair_deployment
 
 
 class DependencyChecks(unittest.TestCase):
+    def test_cra_existing_tsx_without_typescript_setup_is_rejected(self):
+        files = {
+            "Dockerfile": "FROM node:22\nCOPY frontend/ /app/\nEXPOSE 8080\n",
+            "frontend/package.json": json.dumps({"scripts": {"build": "react-scripts build"},
+                "dependencies": {"react-scripts": "5.0.1", "react": "18.2.0"}}),
+            "frontend/src/index.tsx": "import App from './App';",
+            "frontend/src/App.tsx": "export default function App() { return null; }",
+        }
+        with self.assertRaisesRegex(ValueError, "tsconfig.json") as error:
+            CoderAgent._validate_deployment_contract(files)
+        self.assertIn("@types/react-dom", str(error.exception))
+        # Shared Critic uses the same packaging checks, before publication.
+        from app.agents.critic_agent import CriticAgent
+        findings, checks = CriticAgent()._local_checks(files)
+        self.assertEqual(checks["deployment_contract"], "Failed")
+        self.assertTrue(any("tsconfig.json" in finding.issue for finding in findings))
+
+    def test_cra_typed_setup_and_other_toolchains_are_supported(self):
+        for build_tool in ("react-scripts", "vite", "next"):
+            files = {"frontend/package.json": json.dumps({
+                "scripts": {"build": build_tool + " build"},
+                "devDependencies": {"react-scripts": "5.0.1", "typescript": "4.9.5",
+                    "@types/react": "18.2.0", "@types/react-dom": "18.2.0"}}),
+                "frontend/src/App.tsx": "export default () => null;"}
+            if build_tool == "react-scripts":
+                files["frontend/tsconfig.json"] = '{"compilerOptions":{"jsx":"react-jsx"}}'
+            self.assertEqual(dependency_manifest_issues(files), [])
+
+    def test_cra_javascript_and_type_declarations_do_not_require_ts_setup(self):
+        files = {"package.json": json.dumps({"scripts": {"build": "react-scripts build"},
+                    "dependencies": {"react-scripts": "5.0.1"}}),
+                 "src/App.jsx": "export default () => null;", "src/react-app-env.d.ts": "types"}
+        self.assertEqual(dependency_manifest_issues(files), [])
+
     def test_cra_build_tool_missing_with_lockfile_is_rejected(self):
         files = {
             "Dockerfile": "FROM node:22\nCOPY frontend/ /app/\nEXPOSE 8080\n",
@@ -43,6 +77,19 @@ class DependencyChecks(unittest.TestCase):
 
 
 class OutputRetry(unittest.IsolatedAsyncioTestCase):
+    async def test_unchanged_repair_keeps_original_failure_and_does_not_publish(self):
+        build, store, callback = self.fixture()
+        callback.diagnostics = "Module not found: Can't resolve './App' in '/app/frontend/src'"
+        store._agent_service.run_coder_agent.return_value = CoderResult(
+            files=dict(build.proof.artifacts), mode="foundry-agent")
+        with patch("app.services.deployment_repair.GitHubPublisher.publish", new_callable=AsyncMock) as publish:
+            await repair_deployment(store, build.id, callback)
+        publish.assert_not_awaited()
+        store._agent_service.run_critic_agent.assert_not_awaited()
+        self.assertIn("Can't resolve './App'", build.error)
+        self.assertTrue(build.deployment_repair_review["blockers"])
+        self.assertEqual(build.proof.artifacts, {"app.py": "original"})
+
     def fixture(self):
         build = NS(id="example", title="Example", blueprint=NS(security=[], deployment="ACA", identity="OIDC"),
                    requirements=[], acceptance_criteria=[], proof=NS(artifacts={"app.py": "original"}),

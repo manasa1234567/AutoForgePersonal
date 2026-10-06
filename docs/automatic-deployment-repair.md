@@ -78,6 +78,13 @@ a separate run.
 
 ## Limits
 
+Source review rejects CRA TypeScript applications missing `tsconfig.json` or
+compatible TypeScript/React type dependencies. It also rejects supplied ASGI
+startup source omitted from every literal Docker `COPY`. Dynamic/generated
+paths and final-image module locations still require actual startup validation.
+An unchanged Coder repair preserves the original build diagnostics in its
+blocker report; it is never published as another deployment attempt.
+
 Generated npm projects resolve their lockfiles from the approved package.json
 using npm in an isolated Node 22 packaging container. Model-authored checksums
 and incomplete dependency trees are replaced with package-manager output;

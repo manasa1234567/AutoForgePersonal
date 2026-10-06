@@ -134,7 +134,70 @@ def packaging_issues(artifacts: dict[str, str]) -> list[str]:
     return [
         f"Dockerfile COPY requires missing project source: {source}."
         for source in missing_copy_sources(artifacts)
-    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts) + local_import_issues(artifacts)
+    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts) + local_import_issues(artifacts) + uncopied_startup_issues(artifacts)
+
+
+def uncopied_startup_issues(artifacts: dict[str, str]) -> list[str]:
+    """Catch supplied ASGI source omitted from every literal COPY instruction.
+
+    Do not infer image paths: a copy in any stage counts, even if relocated.
+    Dynamic inputs, ADD and generated source require actual image validation.
+    """
+    dockerfile = re.sub(r"\\\r?\n", " ", artifacts.get("Dockerfile", ""))
+    final_stage = re.split(r"(?im)(?=^\s*FROM\s)", dockerfile)[-1]
+    commands = re.findall(r"(?im)^\s*(?:CMD|ENTRYPOINT)\s+(\[.*\])\s*$", final_stage)
+    args = []
+    for command in commands:
+        try:
+            parsed = json.loads(command)
+        except ValueError:
+            return []
+        if not isinstance(parsed, list) or not all(isinstance(arg, str) for arg in parsed):
+            return []
+        args.extend(parsed)
+    if not any(arg in {"uvicorn", "hypercorn"} for arg in args):
+        return []
+    modules = [arg.split(":")[0] for arg in args if re.fullmatch(r"[\w.]+:[\w.]+", arg)]
+    if len(modules) != 1:
+        return []
+    suffix = modules[0].replace(".", "/")
+    candidates = [path for path in artifacts if any(
+        path == name or path.endswith("/" + name)
+        for name in (suffix + ".py", suffix + "/__init__.py")
+    )]
+    if not candidates:
+        return []  # Installed/external modules are checked by real startup.
+    sources = []
+    for line in dockerfile.splitlines():
+        if re.match(r"(?i)^\s*(?:ADD|ONBUILD)\s", line):
+            return []
+        match = re.match(r"(?i)^\s*COPY\s+(.+)$", line)
+        if not match:
+            continue
+        value = match[1].strip()
+        if re.search(r"--from(?:=|\s)", value):
+            continue
+        if any(char in value for char in "$*?[<") and not value.startswith("["):
+            return []
+        value = re.sub(r"^(?:--[\w-]+(?:=[^\s]+)?\s+)+", "", value)
+        try:
+            parts = json.loads(value) if value.startswith("[") else shlex.split(value)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(parts, list) or len(parts) < 2 or not all(isinstance(p, str) for p in parts):
+            return []
+        for source in parts[:-1]:
+            if any(char in source for char in "$*?[<"):
+                return []
+            sources.append(posixpath.normpath(source.lstrip("/")))
+    if any(source == "." or path == source or path.startswith(source.rstrip("/") + "/")
+           for source in sources for path in candidates):
+        return []
+    return [
+        f"Dockerfile starts local ASGI module {modules[0]}, but its source ({', '.join(candidates)}) "
+        "is not included in any build-context COPY. Copy the actual application source into the "
+        "image, preserve its imports and align its final location with the startup command."
+    ]
 
 
 def dependency_manifest_issues(artifacts: dict[str, str]) -> list[str]:
@@ -161,6 +224,29 @@ def dependency_manifest_issues(artifacts: dict[str, str]) -> list[str]:
             isinstance(command, str) and re.match(r"^\s*react-scripts(?:\s|$)", command)
             for command in scripts.values()
         )
+        root = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+        typed_sources = any(
+            name.startswith(root + "src/") and name.endswith((".ts", ".tsx"))
+            and not name.endswith(".d.ts")
+            and not re.search(r"(?:^|/)(?:tests|__tests__)/|\.(?:test|spec)\.", name)
+            for name in artifacts
+        )
+        if uses_cra and typed_sources:
+            if root + "tsconfig.json" not in artifacts:
+                issues.append(
+                    f"{path}: react-scripts builds TypeScript sources but {root}tsconfig.json is missing. "
+                    "Without that file CRA excludes .ts/.tsx from module resolution, so an existing "
+                    "App.tsx can fail with Can't resolve './App'. Include a valid CRA TypeScript "
+                    "configuration; do not rename or replace application source to hide this error."
+                )
+            missing = [name for name in ("typescript", "@types/react", "@types/react-dom") if not combined.get(name)]
+            if missing:
+                issues.append(
+                    f"{path}: TypeScript react-scripts sources require declared build dependencies: "
+                    f"{', '.join(missing)}. Use versions compatible with react-scripts and React "
+                    "(react-scripts 5.0.1 requires TypeScript ^3.2.1 or ^4), update the lockfile, "
+                    "and install build dependencies before compiling."
+                )
         if uses_cra and not cra:
             issues.append(
                 f"{path}: scripts invoke react-scripts but neither dependencies nor "
