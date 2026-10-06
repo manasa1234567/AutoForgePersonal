@@ -4,6 +4,7 @@ import json
 import posixpath
 import re
 import shlex
+from .python_import_contract import local_import_issues
 
 
 def missing_copy_sources(artifacts: dict[str, str]) -> list[str]:
@@ -133,7 +134,7 @@ def packaging_issues(artifacts: dict[str, str]) -> list[str]:
     return [
         f"Dockerfile COPY requires missing project source: {source}."
         for source in missing_copy_sources(artifacts)
-    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts)
+    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts) + local_import_issues(artifacts)
 
 
 def dependency_manifest_issues(artifacts: dict[str, str]) -> list[str]:
