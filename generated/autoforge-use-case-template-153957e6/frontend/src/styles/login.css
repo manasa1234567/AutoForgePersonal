@@ -1,0 +1,17 @@
+
+.login-container {
+  max-width: 320px;
+  margin: 6rem auto;
+  text-align: center;
+}
+
+.login-container h1 {
+  margin-bottom: 1.5rem;
+}
+
+.login-container button {
+  width: 100%;
+  font-weight: 600;
+  padding: 1rem;
+  font-size: 1.25rem;
+}

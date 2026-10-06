@@ -1,0 +1,28 @@
+
+.feedback-form-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  max-width: 400px;
+  width: 90%;
+  background: white;
+  padding: 1rem 1.5rem 1.5rem 1.5rem;
+  border-radius: 8px;
+  outline: 2px solid #2563eb;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+  z-index: 1000;
+}
+
+.feedback-form-dialog > h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.feedback-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+}

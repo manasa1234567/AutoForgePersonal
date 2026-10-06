@@ -1,0 +1,34 @@
+
+.attendance-list {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+  margin-top: 2rem;
+}
+
+.attendance-list h2 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.attendance-list select {
+  margin-bottom: 1rem;
+  max-width: 100%;
+}
+
+.attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.attendance-table th,
+.attendance-table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.attendance-table th {
+  background-color: #f9fafb;
+}

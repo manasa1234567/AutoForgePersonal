@@ -1,0 +1,48 @@
+
+.dashboard-widgets {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.widgets-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.widget.card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+  flex: 1 1 240px;
+  min-width: 200px;
+  padding: 1rem;
+}
+
+.widget h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.widget ul {
+  list-style: none;
+  padding-left: 0;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.widget ul li {
+  margin-bottom: 0.25rem;
+}
+
+.widget button {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 600px) {
+  .widgets-row {
+    flex-direction: column;
+  }
+}
