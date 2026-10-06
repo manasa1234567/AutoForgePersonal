@@ -1,0 +1,13 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.3
+psycopg[binary]
+python-multipart
+email-validator
+python-jose[cryptography]
+passlib[bcrypt]
+sqlalchemy[asyncio]
+asgiref
+itsdangerous
+pytest
+httpx
