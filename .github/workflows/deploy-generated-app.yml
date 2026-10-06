@@ -112,6 +112,9 @@ jobs:
           PORT=8080
           DOCKERFILE=""
           EXPECT_FRONTEND=false
+          if [[ -f "$APP_DIR/.autoforge-release.json" ]]; then
+            EXPECT_FRONTEND=$(jq -er 'if (.expectFrontend | type) == "boolean" then .expectFrontend | tostring else error("Invalid frontend contract") end' "$APP_DIR/.autoforge-release.json")
+          fi
           if find "$APP_DIR" -type f -name index.html \
               -not -path '*/tests/*' -not -path '*/__tests__/*' -not -path '*/node_modules/*' \
               -print -quit | grep -q .; then
@@ -265,6 +268,7 @@ jobs:
             exit 1
           fi
 
+          echo "EXPECT_FRONTEND=$EXPECT_FRONTEND" >> "$GITHUB_ENV"
           IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID-${DEPLOY_COMMIT:0:12}"
           echo "build_context=$(realpath "$CONTEXT")" >> "$GITHUB_OUTPUT"
           # Resolve model-authored npm locks with the package manager. This is
@@ -401,9 +405,17 @@ jobs:
           set -euo pipefail
           echo smoke > "$RUNNER_TEMP/deployment-phase"
           for attempt in {1..12}; do
-            STATUS=$(curl -sS --connect-timeout 3 --max-time 5 -o /dev/null -w '%{http_code}' "$APP_URL/" || true)
+            RESPONSE_FILE="$RUNNER_TEMP/deployed-root.html"
+            RESPONSE=$(curl -sS --connect-timeout 3 --max-time 5 -o "$RESPONSE_FILE" -w '%{http_code}|%{content_type}' "$APP_URL/" || true)
+            STATUS="${RESPONSE%%|*}"
+            CONTENT_TYPE="${RESPONSE#*|}"
             echo "Smoke test $attempt: HTTP $STATUS"
-            if [[ "$STATUS" == "200" ]]; then exit 0; fi
+            if [[ "$STATUS" == "200" ]]; then
+              if [[ "${EXPECT_FRONTEND:-false}" != "true" ]]; then exit 0; fi
+              if [[ "$CONTENT_TYPE" == text/html* ]] && grep -Eiq '<!doctype html|<html([[:space:]>])' "$RESPONSE_FILE"; then exit 0; fi
+              echo "Approved frontend is missing: deployed GET / must return an HTML document, not an API status response." >&2
+              exit 1
+            fi
             sleep 5
           done
           echo "Azure revision state:" >&2

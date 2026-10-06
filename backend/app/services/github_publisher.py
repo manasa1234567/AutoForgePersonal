@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import time
@@ -9,6 +10,7 @@ from urllib.parse import quote
 import httpx
 
 from ..models.schemas import BuildState
+from ..agents.frontend_contract import expects_browser_ui, frontend_issues
 
 
 class GitHubPublisher:
@@ -29,6 +31,14 @@ class GitHubPublisher:
         artifacts = build.proof.artifacts if build.proof else {}
         if not artifacts:
             raise RuntimeError("There are no generated artifacts to publish.")
+        frontend = build.blueprint.frontend if build.blueprint else ""
+        issues = frontend_issues(artifacts, frontend)
+        if issues:
+            raise RuntimeError(issues[0])
+        # Platform-owned contract: model output cannot downgrade the UI gate.
+        artifacts = {**artifacts, ".autoforge-release.json": json.dumps({
+            "schemaVersion": 1, "expectFrontend": expects_browser_ui(frontend),
+        })}
 
         try:
             private_key = base64.b64decode(key_b64, validate=True).decode("utf-8")

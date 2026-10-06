@@ -22,6 +22,7 @@ from .dynamic_sessions_sandbox import DynamicSessionsSandbox
 from .container_job_sandbox import ContainerAppsJobSandbox
 from .spec_agent import SpecAgent
 from .deployment_contract import packaging_issues
+from .frontend_contract import frontend_issues
 from .typescript_review import form_error_findings
 
 
@@ -67,6 +68,11 @@ class CriticAgent:
         # ---------------------------------------------------------
 
         local_findings, checks = self._local_checks(artifacts)
+        ui_issues = frontend_issues(artifacts, blueprint.frontend)
+        checks["frontend_scope"] = "Failed" if ui_issues else "Passed"
+        for issue in ui_issues:
+            local_findings.append(CriticFinding(severity="Critical", file=None, issue=issue,
+                                               recommendation="Generate and package the approved UI before release."))
 
         coverage = [
             f"{item.get('id', f'REQ-{index:03d}')}: implementation review required for: "

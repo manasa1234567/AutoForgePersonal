@@ -16,6 +16,7 @@ from .artifact_limits import (
 from .spec_agent import SpecAgent
 from .deployment_contract import packaging_issues
 from .container_startup import normalize_startup
+from .frontend_contract import frontend_issues
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
             try:
                 data = SpecAgent._parse_json_response(str(response))
                 files = self._ensure_react_entrypoint(self._merge_repair_files(data, previous_artifacts))
-                files = self._validate_deployment_contract(files)
+                files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
             except ValueError as exc:
                 # Deployment repairs have their own shared attempt budget.
                 # Return the candidate and diagnostics to that loop instead of
@@ -184,7 +185,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                 )
                 data = SpecAgent._parse_json_response(str(response))
                 files = self._ensure_react_entrypoint(self._merge_repair_files(data, files or previous_artifacts))
-                files = self._validate_deployment_contract(files)
+                files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
             skills_used: list[SkillUsage] = []
@@ -367,7 +368,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
         return completed
 
     @staticmethod
-    def _validate_deployment_contract(files: dict[str, str]) -> dict[str, str]:
+    def _validate_deployment_contract(files: dict[str, str], frontend: str = "") -> dict[str, str]:
         files = normalize_startup(files)
         dockerfile = files.get("Dockerfile")
         if not dockerfile:
@@ -376,7 +377,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
             )
         if re.search(r"(?im)^\s*EXPOSE\s+8080(?:/tcp)?\s*$", dockerfile) is None:
             raise ValueError("Coder Agent root Dockerfile must contain EXPOSE 8080")
-        issues = packaging_issues(files)
+        issues = packaging_issues(files) + frontend_issues(files, frontend)
         if issues:
             raise ValueError(" ".join(issues))
         return files
