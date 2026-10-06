@@ -17,6 +17,10 @@ FROM nginx:stable-alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# Replace default nginx.conf with configuration to listen on port 8080
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Expose port 8080 (mapped by container hosting)
 EXPOSE 8080
 
