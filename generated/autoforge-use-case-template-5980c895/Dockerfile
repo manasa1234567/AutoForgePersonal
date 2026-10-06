@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 # Install system dependencies including nodejs and npm for frontend build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl nodejs npm \
+    build-essential curl nodejs npm git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 
 # Install frontend dependencies and build frontend
 WORKDIR /app/frontend
-RUN if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; else npm install; fi
+# Fix for npm ci errors by forcing npm install
+RUN npm install
 RUN npm run build
 
 # Copy backend source
