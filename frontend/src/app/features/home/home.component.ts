@@ -14,6 +14,36 @@ interface SourceOption {
   placeholder: string;
 }
 
+const USE_CASE_TEMPLATE = `# Use Case: [short name]
+
+## Problem and desired outcome
+What problem should this application solve? What should improve for the user?
+
+## Users and roles
+- Primary user:
+- Other roles and permissions:
+
+## Main workflow
+1. [What starts the workflow?]
+2. [What does the user do?]
+3. [What successful outcome should they see?]
+
+## Alternate and error cases
+- [Validation, cancellation, unavailable service, or other important case]
+
+## Data and integrations
+- Information to collect or display:
+- Systems or APIs to integrate with (if known):
+
+## Security and constraints
+- Authentication, privacy, accessibility, or compliance needs:
+- Required technology, hosting, or other constraints (if any):
+
+## Acceptance criteria
+- Given [context], when [action], then [observable result].
+-
+`;
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -180,11 +210,28 @@ export class HomeComponent implements OnInit {
     if (this.selectedSource === 'openapi') {
       return this.selectedFilePayloads.some((file) => /\.(yaml|yml|json)$/i.test(file.name));
     }
-    return this.selectedSource === 'architecture' && this.selectedFilePayloads.length > 0;
+    return (this.selectedSource === 'architecture' || this.selectedSource === 'usecase')
+      && this.selectedFilePayloads.length > 0;
   }
 
   get filesError(): boolean {
     return this.selectedSource === 'upload' && this.intakeForm.controls.sourceText.touched && this.selectedFiles.length === 0;
+  }
+
+  loadUseCaseTemplate(): void {
+    this.intakeForm.controls.sourceText.setValue(USE_CASE_TEMPLATE);
+    this.intakeForm.controls.sourceText.markAsDirty();
+    this.errorMessage = '';
+  }
+
+  downloadUseCaseTemplate(): void {
+    const file = new Blob([USE_CASE_TEMPLATE], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'autoforge-use-case-template.md';
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async onFilesSelected(event: Event): Promise<void> {
@@ -275,6 +322,9 @@ export class HomeComponent implements OnInit {
     if (this.selectedSource === 'jira') return `Jira ${sourceText.trim().toUpperCase()}`;
     if (this.selectedSource === 'upload') {
       return this.selectedFiles[0]?.replace(/\.[^.]+$/, '') || 'Engineering Documents';
+    }
+    if (this.selectedSource === 'usecase' && this.selectedFiles.length > 0) {
+      return this.selectedFiles[0].replace(/\.[^.]+$/, '') || 'Use Case';
     }
     if (['openapi', 'architecture'].includes(this.selectedSource) && this.selectedFiles.length > 0) {
       return this.selectedFiles[0].replace(/\.[^.]+$/, '');

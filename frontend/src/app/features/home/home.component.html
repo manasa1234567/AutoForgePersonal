@@ -141,14 +141,22 @@
               <label>Input type<strong class="selected-source">{{ selectedOption.title }}</strong></label>
             </div>
             @if (selectedSource !== 'upload') {
+              @if (selectedSource === 'usecase') {
+                <div class="upload-hint">Use a structured template for clearer requirements. Load it here, or download, complete, and attach it.</div>
+                <div class="input-preview use-case-template-actions">
+                  <button class="input-chip" type="button" (click)="loadUseCaseTemplate()">Load sample template</button>
+                  <button class="input-chip" type="button" (click)="downloadUseCaseTemplate()">Download Markdown template</button>
+                </div>
+              }
               <label>{{ selectedSource === 'openapi' ? 'API contract / specification' : selectedSource === 'architecture' ? 'Architecture decisions and constraints' : selectedSource === 'usecase' ? 'Capability to build' : 'Engineering requirement' }}<textarea rows="5" formControlName="sourceText" [placeholder]="selectedOption.placeholder"></textarea>@if (sourceTextError) { <small class="field-error">Enter at least 10 characters of {{ selectedSource === 'usecase' ? 'capability details' : 'input details' }} to start analysis.</small> }</label>
+              @if (selectedSource === 'usecase' && selectedFiles.length > 0) { <p class="upload-hint">{{ selectedFiles.length }} use-case document(s) will be extracted and combined with the capability text.</p> }
             } @else {
               <p class="upload-hint">Add the approved engineering documents AutoForge should use as its source of truth.</p>
               @if (filesError) { <small class="field-error upload-error">Choose at least one engineering document to continue.</small> }
             }
           }
           <div class="upload-row">
-            <label class="upload-control"><input type="file" multiple (change)="onFilesSelected($event)" accept=".yaml,.yml,.json,.pdf,.docx,.txt,.md"><span>{{ readingFiles ? 'Reading documents…' : '＋ Add engineering documents' }}</span></label>
+            <label class="upload-control"><input type="file" multiple (change)="onFilesSelected($event)" accept=".yaml,.yml,.json,.pdf,.docx,.txt,.md"><span>{{ readingFiles ? 'Reading documents…' : selectedSource === 'usecase' ? '＋ Attach completed use-case template' : '＋ Add engineering documents' }}</span></label>
             @if (selectedFiles.length > 0) { <span class="file-count">{{ selectedFiles.length }} file(s) selected</span> }
           </div>
           @if (errorMessage) { <div class="error-message" role="alert">{{ errorMessage }}</div> }
