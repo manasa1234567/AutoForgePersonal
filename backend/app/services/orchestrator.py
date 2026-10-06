@@ -1375,6 +1375,16 @@ class Orchestrator:
             return build, True
         if can_repair:
             return self.get(build_id), False
+        # The workflow sends a final failure acknowledgement after waiting for
+        # repair. Preserve the newer repair diagnosis instead of replacing it
+        # with the same commit's original compiler log.
+        if (callback.status == "failed" and callback.commit_sha
+                and callback.commit_sha == build.deployment_commit
+                and build.deployment_status == "failed"
+                and build.deployment_repair_attempts >= 3
+                and build.deployment_repair_review.get("blockers")
+                and build.error):
+            return build, False
         if callback.status == "failed" and build.deployment_repair_attempts >= 3:
             callback = callback.model_copy(update={"message": "Automatic repair limit reached (3). " + callback.message})
         return self.record_deployment(build_id, callback), False

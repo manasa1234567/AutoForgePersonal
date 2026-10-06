@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from app.agents.coder_agent import CoderAgent, CoderResult
 from app.agents.critic_agent import CriticAgent, CriticResult
 from app.agents.deployment_contract import missing_copy_sources, stage_copy_issues
-from app.models.schemas import Blueprint, BuildCreate, CriticFinding, ProofResult, SecurityReview
+from app.models.schemas import Blueprint, BuildCreate, CriticFinding, DeploymentCallback, ProofResult, SecurityReview
 from app.repositories.build_repository import InMemoryBuildRepository
 from app.services.orchestrator import Orchestrator
 
@@ -25,6 +25,24 @@ def blueprint():
 
 
 class DeploymentRegressions(unittest.TestCase):
+    def test_final_workflow_callback_preserves_newer_repair_failure(self):
+        store = Orchestrator(build_repository=SnapshotRepository())
+        build = store.create(BuildCreate(source_type="usecase", title="Hello", source_text="Hello page"))
+        build.feature_branch = "feature/hello"
+        build.deployment_commit = "a" * 40
+        build.deployment_repair_attempts = 3
+        build.deployment_status = "failed"
+        build.status = "Failed"
+        build.error = "Automatic deployment repair stopped: incompatible TypeScript"
+        build.deployment_repair_review = {"blockers": [{"issue": "incompatible TypeScript"}]}
+        store._build_repository.save(build)
+        updated, repair = store.accept_deployment_callback(build.id, DeploymentCallback(
+            branch=build.feature_branch, commit_sha=build.deployment_commit,
+            status="failed", phase="image_build", message="old react-scripts not found", diagnostics="old error"))
+        self.assertFalse(repair)
+        self.assertEqual(updated.error, build.error)
+        self.assertEqual(len(updated.audit), len(build.audit))
+
     def test_wrong_stage_directory_is_returned_to_coder_and_critic(self):
         files = {
             "Dockerfile": """FROM python:3.11-slim AS backend-build

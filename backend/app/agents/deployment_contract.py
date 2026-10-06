@@ -155,6 +155,19 @@ def dependency_manifest_issues(artifacts: dict[str, str]) -> list[str]:
         combined = {**deps, **dev}
         cra = combined.get("react-scripts")
         ts = combined.get("typescript")
+        scripts = package.get("scripts", {})
+        uses_cra = isinstance(scripts, dict) and any(
+            isinstance(command, str) and re.match(r"^\s*react-scripts(?:\s|$)", command)
+            for command in scripts.values()
+        )
+        if uses_cra and not cra:
+            issues.append(
+                f"{path}: scripts invoke react-scripts but neither dependencies nor "
+                "devDependencies declares it. npm install cannot provide this build tool. "
+                "Declare a compatible react-scripts version and update the lockfile together. "
+                "If using react-scripts 5.0.1, TypeScript must satisfy ^3.2.1 or ^4 "
+                "(for example 4.9.5), not TypeScript 5. Install build dependencies before npm run build."
+            )
         # Limit inference to simple exact/caret/tilde versions. Other semver
         # ranges, workspace references and overrides require the real resolver.
         if (isinstance(cra, str) and re.fullmatch(r"[~^]?5\.0\.1", cra.strip())

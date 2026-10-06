@@ -9,6 +9,19 @@ from app.services.deployment_repair import repair_deployment
 
 
 class DependencyChecks(unittest.TestCase):
+    def test_cra_build_tool_missing_with_lockfile_is_rejected(self):
+        files = {
+            "Dockerfile": "FROM node:22\nCOPY frontend/ /app/\nEXPOSE 8080\n",
+            "frontend/package.json": json.dumps({
+                "scripts": {"build": "react-scripts build"},
+                "devDependencies": {"typescript": "5.1.6"}}),
+            "frontend/package-lock.json": '{"lockfileVersion":3,"packages":{}}',
+        }
+        with self.assertRaisesRegex(ValueError, "neither dependencies nor devDependencies") as error:
+            CoderAgent._validate_deployment_contract(files)
+        self.assertIn("4.9.5", str(error.exception))
+        self.assertEqual(files["frontend/package-lock.json"], '{"lockfileVersion":3,"packages":{}}')
+
     def test_cra_conflict_is_rejected_before_publication(self):
         files = {
             "Dockerfile": "FROM node:22\nCOPY frontend/ /app/\nEXPOSE 8080\n",
