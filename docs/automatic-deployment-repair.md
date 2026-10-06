@@ -24,6 +24,17 @@ force npm installation, or bypass security review.
 
 ## Flow
 
+Before deployment, initial Forge generation validates the generated Dockerfile.
+Invalid packaging gets up to two Coder repair calls with the latest candidate
+files and validation diagnostics. Malformed JSON gets one regeneration. These
+calls are separate from the deployment repair budget described below. Missing
+frontend `build` or `dist` output must be built inside a named Docker stage and
+copied from that stage, rather than copied from nonexistent project files.
+Validation still blocks invalid candidates after the retry limit. Existing
+builds stopped at this stage must restart Forge after the updated backend is
+deployed; rerunning a deployment workflow cannot fix a build with no published
+artifacts.
+
 The workflow builds the generated root Dockerfile, starts that image locally,
 and checks its HTTP root. If packaging, compilation, dependency installation,
 or startup fails, it sends bounded, redacted diagnostics and the exact commit

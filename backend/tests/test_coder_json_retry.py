@@ -45,3 +45,33 @@ class CoderJsonRetry(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(CoderOutputError):
             await self.generate(['{"files": [], bad}'], retry=False)
         self.assertEqual(self.agent.run.await_count, 1)
+
+    async def test_missing_frontend_output_gets_two_packaging_repairs(self):
+        files = {
+            "Dockerfile": "FROM nginx\nCOPY frontend/build /site\nEXPOSE 8080\n",
+            "frontend/package.json": '{"scripts":{"build":"react-scripts build"},"dependencies":{"react-scripts":"5.0.1"}}',
+            "frontend/src/index.js": "console.log('application');",
+        }
+        initial = json.dumps({"files": [{"path": p, "content": c} for p, c in files.items()]})
+        fixed = json.dumps({"files": [{"path": "Dockerfile", "content": (
+            "FROM node:22 AS frontend-build\nWORKDIR /app/frontend\n"
+            "COPY frontend/ ./\nRUN npm install && npm run build\n"
+            "FROM nginx\nCOPY --from=frontend-build /app/frontend/build /site\nEXPOSE 8080\n"
+        )}]})
+        result = await self.generate([initial, initial, fixed])
+        self.assertEqual(self.agent.run.await_count, 3)
+        self.assertEqual(result.files["frontend/src/index.js"], files["frontend/src/index.js"])
+        context = json.loads(self.agent.run.call_args_list[2].args[0])
+        self.assertIn("frontend/build", context["criticAndSandboxFindings"][0]["issue"])
+        self.assertIn("COPY --from", context["criticAndSandboxFindings"][0]["recommendation"])
+        self.credential.close.assert_called_once()
+
+    async def test_packaging_repairs_stop_and_preserve_candidate(self):
+        invalid = json.dumps({"files": [{"path": "Dockerfile", "content":
+                            "FROM nginx\nCOPY frontend/build /site\nEXPOSE 8080\n"}]})
+        with self.assertRaises(CoderOutputError) as error:
+            await self.generate([invalid] * 3)
+        self.assertEqual(self.agent.run.await_count, 3)
+        self.assertIn("frontend/build", str(error.exception))
+        self.assertIn("Dockerfile", error.exception.files)
+        self.credential.close.assert_called_once()

@@ -115,7 +115,7 @@ class CoderAgent:
 
         instructions += """
 
-Deployment packaging is mandatory for every technology stack. Include a file named exactly Dockerfile at the project root. It must install and build the complete approved application, including its frontend and backend when both are selected, start the application without an interactive shell, listen on 0.0.0.0 port 8080, and contain EXPOSE 8080. Do not assume React, Node.js, or any other specific framework. Include every dependency manifest, lock file, configuration file, and startup file required for docker build and container startup. Every runtime dependency must be installed in or copied into the final image stage; do not install dependencies only in a discarded build stage. Verify that CMD or ENTRYPOINT references a module or executable that exists at its final-image path. Configure database and external-service connections through environment variables; never embed credentials. The container must start and return HTTP 200 at / even when an optional external database or service is not configured; keep the UI available and report the unavailable integration only when an affected operation is used. The root Dockerfile is the deployment interface used by Azure Container Apps.
+Deployment packaging is mandatory for every technology stack. Include a file named exactly Dockerfile at the project root. It must install and build the complete approved application, including its frontend and backend when both are selected, start the application without an interactive shell, listen on 0.0.0.0 port 8080, and contain EXPOSE 8080. Do not assume React, Node.js, or any other specific framework. Include every dependency manifest, lock file, configuration file, and startup file required for docker build and container startup. Never COPY generated frontend build/dist output from the project build context unless those files are actually supplied. Build the frontend from its source and dependency manifest in a named Docker stage, then COPY --from=<stage> its actual output path into the runtime stage. Resolve that path from the selected build tool and configuration, and keep it consistent with the static server. Every runtime dependency must be installed in or copied into the final image stage; do not install dependencies only in a discarded build stage. Verify that CMD or ENTRYPOINT references a module or executable that exists at its final-image path. Configure database and external-service connections through environment variables; never embed credentials. The container must start and return HTTP 200 at / even when an optional external database or service is not configured; keep the UI available and report the unavailable integration only when an affected operation is used. The root Dockerfile is the deployment interface used by Azure Container Apps.
 
 For Python projects, use real, mutually compatible package releases and never guess exact dependency versions. For FastAPI applications, use the platform-tested baseline fastapi==0.115.12, uvicorn[standard]==0.34.2, and pydantic==2.11.3 unless the approved stack requires a compatible alternative. FastAPI versions below 0.100 do not support Pydantic 2.
 
@@ -146,46 +146,48 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                 instructions=instructions,
             )
             response = await agent.run(json.dumps(context, ensure_ascii=False))
-            try:
-                data = SpecAgent._parse_json_response(str(response))
-                files = self._ensure_react_entrypoint(self._merge_repair_files(data, previous_artifacts))
-                files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
-            except ValueError as exc:
-                # Deployment repairs have their own shared attempt budget.
-                # Return the candidate and diagnostics to that loop instead of
-                # spending an invisible extra model call and losing the files.
-                if not retry_packaging:
-                    raise
-                # Retry malformed JSON/schema output as well as packaging once.
-                # Never guess missing source by patching malformed JSON locally.
-                repair_context = {
-                    **context,
-                    "previousGeneratedArtifacts": files or previous_artifacts or {},
-                    "criticAndSandboxFindings": [
-                        {
-                            "severity": "Critical",
-                            "file": "Dockerfile" if files else None,
-                            "issue": str(exc),
-                            "recommendation": (
-                                "Return one complete valid JSON object matching the files schema. "
-                                "Use double-quoted JSON keys and escape quotes, newlines and backslashes "
-                                "inside file content strings. Do not include markdown, comments or trailing commas. "
-                                "Resolve the reported packaging defect, including any missing COPY source files "
-                                "or dependency manifests. Add or correct a root Dockerfile that builds and starts the complete approved "
-                                "stack on 0.0.0.0:8080, includes EXPOSE 8080, and installs all runtime dependencies "
-                                "in the final image. Keep backend static-file paths consistent with the final image's "
-                                "frontend location. Preserve the existing application and all approved features."
-                            ),
-                        },
-                        *(repair_findings or []),
-                    ],
-                }
-                response = await agent.run(
-                    json.dumps(repair_context, ensure_ascii=False)
-                )
-                data = SpecAgent._parse_json_response(str(response))
-                files = self._ensure_react_entrypoint(self._merge_repair_files(data, files or previous_artifacts))
-                files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
+            # Initial Forge generation owns two packaging repairs. Deployment
+            # repair callers disable these retries and own their shared budget.
+            for attempt in range(3 if retry_packaging else 1):
+                candidate_valid = False
+                try:
+                    data = SpecAgent._parse_json_response(str(response))
+                    files = self._ensure_react_entrypoint(self._merge_repair_files(data, files or previous_artifacts))
+                    candidate_valid = True
+                    files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
+                    break
+                except ValueError as exc:
+                    # Malformed JSON/schema gets one regeneration; packaging
+                    # gets two repairs, always retaining the latest safe files.
+                    if not retry_packaging or attempt >= (2 if candidate_valid else 1):
+                        raise
+                    repair_context = {
+                        **context,
+                        "previousGeneratedArtifacts": files or previous_artifacts or {},
+                        "criticAndSandboxFindings": [
+                            {
+                                "severity": "Critical",
+                                "file": "Dockerfile" if files else None,
+                                "issue": str(exc),
+                                "recommendation": (
+                                    "Return one complete valid JSON object matching the files schema. "
+                                    "Use double-quoted JSON keys and escape quotes, newlines and backslashes "
+                                    "inside file content strings. Do not include markdown, comments or trailing commas. "
+                                    "A missing frontend build/dist directory is generated output, not source: "
+                                    "build it from the existing frontend source in a named Docker stage and "
+                                    "COPY --from=<stage> the actual output path into the runtime stage. "
+                                    "Do not fabricate compiled assets or remove the frontend. "
+                                    "Resolve the reported packaging defect, including any missing COPY source files "
+                                    "or dependency manifests. Add or correct a root Dockerfile that builds and starts the complete approved "
+                                    "stack on 0.0.0.0:8080, includes EXPOSE 8080, and installs all runtime dependencies "
+                                    "in the final image. Keep backend static-file paths consistent with the final image's "
+                                    "frontend location. Preserve the existing application and all approved features."
+                                ),
+                            },
+                            *(repair_findings or []),
+                        ],
+                    }
+                    response = await agent.run(json.dumps(repair_context, ensure_ascii=False))
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
             skills_used: list[SkillUsage] = []
