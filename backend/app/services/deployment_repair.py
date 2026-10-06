@@ -5,8 +5,9 @@ import asyncio
 import os
 import re
 
-from ..models.schemas import DeploymentCallback
+from ..models.schemas import DeploymentCallback, SkillProposal
 from .github_publisher import GitHubPublisher
+from .skill_registry import skill_registry
 
 
 def clean_diagnostics(value: str) -> str:
@@ -59,6 +60,7 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
     artifacts = {**previous, **repaired.files}
     if artifacts == previous:
         raise RuntimeError("Coder returned unchanged files; deployment was not retried.")
+    skill_candidate = skill_registry.prepare_repair_candidate(repaired.skill_proposal)
     critic = await store._agent_service.run_critic_agent(
         title=build.title, blueprint=build.blueprint, requirements=build.requirements,
         acceptance_criteria=build.acceptance_criteria, artifacts=artifacts,
@@ -88,6 +90,14 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
     build.proof.runtime_status = critic.runtime_status
     build.proof.integration = "Source reviewed; awaiting actual container rebuild and startup check"
     build.security_review = review
+    if skill_candidate is not None:
+        build.skill_proposal = SkillProposal(
+            name=skill_candidate.title,
+            version=skill_candidate.version,
+            reason="Reusable repair candidate; saved as a draft only after deployment smoke test passes.",
+            recipe=skill_candidate.model_dump(by_alias=True),
+            evidence=[f"Successful deployment repair candidate for build {build.id}; human review required."],
+        )
     build.metrics.tokens += repaired.tokens
     build.metrics.self_heal_iterations += 1
     build.metrics.tool_calls += 3

@@ -183,6 +183,8 @@ class SkillProposal(ApiModel):
     version: str
     reason: str
     status: Literal["Pending Approval", "Approved"] = "Pending Approval"
+    recipe: dict[str, Any] | None = None
+    evidence: list[str] = Field(default_factory=list)
 
 
 class SkillRecipe(ApiModel):

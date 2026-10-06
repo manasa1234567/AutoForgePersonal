@@ -4,7 +4,7 @@
 |---|---|---|
 | 3+ AI agents | 7 specialized agents + orchestrator | Foundry Hosted Agent + Agent Framework |
 | 4+ APIs | Build create/start/get/approve/refine/events | FastAPI behind internal Container Apps |
-| RAG / Knowledge Base | 16 governed seed recipes, local approval lifecycle and approved-only lexical retrieval into model-backed agents | Cosmos DB metadata + Blob bodies + Azure AI Search retrieval (cloud adapter pending) |
+| RAG / Knowledge Base | 16 governed seed recipes, local approval lifecycle, approved-only retrieval into model-backed agents | Cosmos DB governance metadata + immutable Blob bodies + optional pre-provisioned Azure AI Search keyword index; lexical fallback |
 | Structured dataset | Requirements, blueprint, proof, metrics | Cosmos DB |
 | Agent orchestration | `Orchestrator` | Microsoft Agent Framework |
 | HITL | Requirements, blueprint, skill and release gates | Foundry tool approval / app approval flow |

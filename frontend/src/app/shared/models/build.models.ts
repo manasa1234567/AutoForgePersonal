@@ -100,6 +100,8 @@ export interface SkillProposal {
   version: string;
   reason: string;
   status: 'Pending Approval' | 'Approved';
+  recipe: SkillRecipe | null;
+  evidence: string[];
 }
 
 export type SkillRecipeStatus = 'draft' | 'pending_approval' | 'approved' | 'deprecated' | 'rejected';

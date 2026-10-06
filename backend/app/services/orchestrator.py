@@ -1396,6 +1396,33 @@ class Orchestrator:
                 "Deployer Agent",
                 metadata={"url": callback.url, "branch": callback.branch},
             )
+            if build.skill_proposal and build.skill_proposal.recipe:
+                try:
+                    candidate = SkillRecipe.model_validate(build.skill_proposal.recipe)
+                    draft = skill_registry.save_repair_candidate(candidate, build_id=build.id)
+                    build.skill_proposal.recipe = draft.model_dump(by_alias=True)
+                    build.skill_proposal.name = draft.title
+                    build.skill_proposal.version = draft.version
+                    build.skill_proposal.status = "Pending Approval"
+                    self._set_agent(build, "Skill Agent", "Ready", "Deployment-verified skill candidate saved as a draft")
+                    self._add_event(
+                        build,
+                        "Skills",
+                        f"Deployment-verified skill candidate saved as draft: {draft.title}",
+                        "Skill Evolver",
+                        severity="warning",
+                        metadata={"skill_id": draft.id, "version": draft.version},
+                    )
+                except Exception as exc:
+                    # Candidate storage must never invalidate a successful app deployment.
+                    self._add_event(
+                        build,
+                        "Skills",
+                        "Deployment succeeded, but its optional skill candidate could not be saved.",
+                        "Skill Evolver",
+                        severity="warning",
+                        metadata={"error_type": type(exc).__name__},
+                    )
         else:
             message = callback.message.strip()[:1000] or "Generated application deployment failed."
             build.deployment_status = "failed"

@@ -24,6 +24,7 @@ class CoderResult:
     mode: str
     tokens: int = 0
     skills_used: list[SkillUsage] = field(default_factory=list)
+    skill_proposal: dict[str, Any] | None = None
 
 
 class CoderAgent:
@@ -118,6 +119,10 @@ Do not add a string index signature such as [key: string]: string to a form-data
 
 For packaging repairs, inspect the whole container startup chain in one pass: resolve each COPY --from source against that stage's WORKDIR and COPY destinations; install or copy console scripts as well as Python libraries (or invoke installed Python modules with python -m); copy frontend output to the exact directory used by the static server; and proxy frontend API routes to the actual backend port. Do not assume an earlier build stage's working directory carries into the next stage. Keep generated frontend requests consistent with the backend route paths. Do not return HTTP 200 for a missing frontend or failed startup just to satisfy a health check.
 """
+        instructions += """
+
+Only during a repair request with previousGeneratedArtifacts and actual critic/sandbox diagnostics, you may return an optional top-level skillProposal object if the successful fix teaches a reusable, stack-neutral engineering procedure. Return null when the fix is task-specific or not proven reusable. The object fields are title, tags, useWhen, inputs, steps, doneWhen, pitfalls, and output. Do not include customer names, secrets, internal URLs, or unverified claims. A proposed skill remains a draft until a human reviews it; never mark it approved.
+"""
 
         try:
             agent = Agent(
@@ -182,7 +187,18 @@ For packaging repairs, inspect the whole container startup chain in one pass: re
                             reason=str(item.get("reason", "Not applicable to this task."))[:500],
                         ))
                         seen_skipped.add(skill_id)
-            return CoderResult(files=files, mode="foundry-agent", skills_used=skills_used + skills_skipped)
+            raw_proposal = data.get("skillProposal")
+            skill_proposal = (
+                raw_proposal
+                if previous_artifacts and repair_findings and isinstance(raw_proposal, dict)
+                else None
+            )
+            return CoderResult(
+                files=files,
+                mode="foundry-agent",
+                skills_used=skills_used + skills_skipped,
+                skill_proposal=skill_proposal,
+            )
         except ValueError as exc:
             # Keep the safe validation detail: otherwise empty or oversized
             # model responses all look like an opaque Foundry request failure.

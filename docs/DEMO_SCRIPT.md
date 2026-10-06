@@ -26,7 +26,7 @@ Show the synthetic contract failure. The Critic Agent identifies the root cause,
 
 ## 4:30 — Skill Registry
 
-Open **Skills** and show the imported seed recipes. Submit one draft for review, approve it, and explain that only approved recipes can be retrieved for matching model-backed agents. In local mode the registry is in memory; Cosmos DB, Blob Storage, and Azure AI Search are pending cloud integration.
+Open **Skills** and show the imported seed recipes. Submit one draft for review, approve it, and explain that only approved recipes for the active agent can be retrieved. In local mode the registry is in memory with lexical retrieval. Azure mode stores governance in Cosmos DB and recipe bodies in Blob Storage; when the IT-provisioned skill index is configured, Azure AI Search performs keyword retrieval, with lexical fallback if Search is unavailable. After a repaired app successfully deploys, an optional generalized skill candidate appears as a draft for human review; it is not automatically approved.
 
 ## 5:00 — Release
 

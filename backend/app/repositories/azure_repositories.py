@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from ..models.schemas import BuildState, SkillRecipe
+
+logger = logging.getLogger(__name__)
 
 
 def _azure_credential() -> Any:
@@ -142,7 +146,7 @@ class AzureBuildRepository:
 
 
 class AzureSkillRepository:
-    """Cosmos DB repository for reviewed skill recipes."""
+    """Cosmos governance metadata, Blob recipe bodies, and optional Azure AI Search."""
 
     def __init__(self) -> None:
         endpoint = os.getenv("AUTOFORGE_COSMOS_ENDPOINT", "").strip()
@@ -160,12 +164,36 @@ class AzureSkillRepository:
         self._container = database.get_container_client(os.getenv("AUTOFORGE_COSMOS_SKILLS_CONTAINER", "skills"))
         properties = self._container.read()
         self._partition_field = self._partition_field_name(properties, "skills")
+        self._body_container = None
+        blob_url = os.getenv("AUTOFORGE_BLOB_ACCOUNT_URL", "").strip()
+        if blob_url:
+            try:
+                from azure.storage.blob import BlobServiceClient
+            except ImportError as exc:
+                raise RuntimeError("Install azure-storage-blob for Azure skill body storage") from exc
+            self._body_container = BlobServiceClient(
+                account_url=blob_url, credential=self._credential
+            ).get_container_client(os.getenv("AUTOFORGE_BLOB_WORKSPACES_CONTAINER", "workspaces"))
+
+        self._search_client = None
+        search_endpoint = os.getenv("AUTOFORGE_SKILL_SEARCH_ENDPOINT", "").strip()
+        search_index = os.getenv("AUTOFORGE_SKILL_SEARCH_INDEX", "").strip()
+        if search_endpoint and search_index:
+            try:
+                from azure.search.documents import SearchClient
+            except ImportError as exc:
+                raise RuntimeError("Install azure-search-documents to enable Azure skill search") from exc
+            self._search_client = SearchClient(
+                endpoint=search_endpoint,
+                index_name=search_index,
+                credential=self._credential,
+            )
 
     def list(self) -> list[SkillRecipe]:
         documents = self._container.query_items(
             query="SELECT * FROM c", enable_cross_partition_query=True
         )
-        return [SkillRecipe.model_validate(self._clean(document)) for document in documents]
+        return [self._hydrate(self._clean(document)) for document in documents]
 
     def get(self, recipe_id: str) -> SkillRecipe:
         try:
@@ -174,14 +202,100 @@ class AzureSkillRepository:
             if getattr(exc, "status_code", None) == 404:
                 raise KeyError(f"Skill recipe '{recipe_id}' not found") from exc
             raise
-        return SkillRecipe.model_validate(self._clean(document))
+        return self._hydrate(self._clean(document))
 
     def save(self, recipe: SkillRecipe) -> None:
         document = recipe.model_dump(mode="json", by_alias=True)
         document["skillId"] = recipe.id
         document["id"] = recipe.id
         document[self._partition_field] = recipe.id
+        if self._body_container is not None:
+            body_keys = ("useWhen", "inputs", "steps", "doneWhen", "pitfalls", "output")
+            body = {key: document[key] for key in body_keys}
+            encoded_body = json.dumps(body, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            digest = hashlib.sha256(encoded_body).hexdigest()
+            blob_name = f"skill-bodies/{recipe.id}/{recipe.version}/{digest}.json"
+            try:
+                self._body_container.upload_blob(name=blob_name, data=encoded_body, overwrite=False)
+            except Exception as exc:
+                if getattr(exc, "status_code", None) != 409:
+                    raise
+            for key in body_keys:
+                document.pop(key, None)
+            document["bodyBlobName"] = blob_name
+            document["bodySha256"] = digest
+
+        self._sync_search_document(recipe)
         self._container.upsert_item(document)
+
+    def search_approved(self, *, agent: str, query: str, limit: int = 5) -> list[SkillRecipe]:
+        if self._search_client is None:
+            return []
+        escaped_agent = agent.replace("'", "''")
+        matches = self._search_client.search(
+            search_text=query.strip() or "*",
+            search_fields=["title", "tags", "useWhen", "searchText"],
+            filter=f"agent eq '{escaped_agent}' and status eq 'approved'",
+            select=["skillId", "version"],
+            top=max(1, min(limit, 5)),
+        )
+        recipes: list[SkillRecipe] = []
+        for match in matches:
+            recipe_id = match.get("skillId")
+            if not isinstance(recipe_id, str):
+                continue
+            try:
+                recipe = self.get(recipe_id)
+            except KeyError:
+                continue
+            if recipe.status == "approved" and recipe.agent.lower() == agent.lower() and recipe.version == match.get("version"):
+                recipes.append(recipe)
+        return recipes
+
+    def _sync_search_document(self, recipe: SkillRecipe) -> None:
+        if self._search_client is None:
+            return
+        document = {
+            "id": recipe.id,
+            "skillId": recipe.id,
+            "version": recipe.version,
+            "agent": recipe.agent,
+            "title": recipe.title,
+            "tags": recipe.tags,
+            "status": recipe.status,
+            "useWhen": recipe.use_when,
+            "searchText": " ".join([
+                recipe.title, recipe.use_when, *recipe.tags, *recipe.inputs,
+                *recipe.steps, *recipe.pitfalls, recipe.done_when, recipe.output,
+            ]),
+        }
+        try:
+            result = self._search_client.upload_documents(documents=[document])
+            if result and not all(item.succeeded for item in result):
+                logger.warning("Azure AI Search rejected a skill index update for %s", recipe.id)
+        except Exception:
+            # Cosmos remains authoritative; approved-only lexical retrieval is the fallback.
+            logger.exception("Azure AI Search skill indexing failed for %s", recipe.id)
+
+    def _hydrate(self, document: dict[str, Any]) -> SkillRecipe:
+        blob_name = document.get("bodyBlobName")
+        if blob_name and self._body_container is not None:
+            content = self._body_container.get_blob_client(blob_name).download_blob().readall()
+            body = json.loads(content.decode("utf-8"))
+            document = {**document, **body}
+        return SkillRecipe.model_validate(document)
+
+    def backfill(self) -> None:
+        """Migrate legacy full Cosmos recipes and populate an enabled Search index."""
+        if self._body_container is None and self._search_client is None:
+            return
+        try:
+            recipes = self.list()
+            for recipe in recipes:
+                self.save(recipe)
+        except Exception:
+            # A cloud-search outage must not prevent builds; retrieval remains lexical.
+            logger.exception("Skill Blob/Search backfill failed; retaining Cosmos-backed retrieval")
 
     @staticmethod
     def _partition_field_name(properties: dict[str, Any], container: str) -> str:

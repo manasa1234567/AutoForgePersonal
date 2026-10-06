@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import os
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models.schemas import AuditEvent, SkillRecipe, SkillStatus
 from ..repositories.skill_repository import InMemorySkillRepository, SkillRepository
+
+logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
@@ -24,6 +28,7 @@ class SkillRegistry:
                     self._repository.get(recipe.id)
                 except KeyError:
                     self._repository.save(recipe)
+            self._repository.backfill()
         else:
             self._repository = InMemorySkillRepository(self._load_seed_pack())
 
@@ -119,6 +124,18 @@ class SkillRegistry:
         return items
 
     def retrieve(self, *, agent: str, query: str, limit: int = 5) -> list[SkillRecipe]:
+        bounded_limit = max(0, min(limit, 5))
+        search = getattr(self._repository, "search_approved", None)
+        if callable(search) and bounded_limit:
+            try:
+                matches = search(agent=agent, query=query, limit=bounded_limit)
+                if matches:
+                    return matches
+            except Exception:
+                logger.warning(
+                    "Azure skill search failed; using approved-only lexical retrieval",
+                    exc_info=True,
+                )
         candidates = self.list(status="approved", agent=agent)
         query_terms = set(re.findall(r"[a-z0-9_-]{2,}", query.lower()))
 
@@ -130,10 +147,98 @@ class SkillRegistry:
             }
             return (len(query_terms & fields["title"]) * 5 + len(query_terms & fields["tags"]) * 4 + len(query_terms & fields["body"]), recipe.id)
         ranked = sorted(candidates, key=score, reverse=True)
-        return [recipe for recipe in ranked if score(recipe)[0] > 0][:max(0, min(limit, 5))]
+        return [recipe for recipe in ranked if score(recipe)[0] > 0][:bounded_limit]
 
     def get(self, recipe_id: str) -> SkillRecipe:
         return self._repository.get(recipe_id)
+
+    @staticmethod
+    def prepare_repair_candidate(candidate: object) -> SkillRecipe | None:
+        """Validate an untrusted Coder suggestion without persisting or approving it."""
+        if not isinstance(candidate, dict):
+            return None
+
+        def text(camel: str, snake: str, maximum: int) -> str | None:
+            value = candidate.get(camel, candidate.get(snake))
+            if not isinstance(value, str):
+                return None
+            value = value.strip()
+            return value[:maximum] if value else None
+
+        def strings(key: str, maximum_items: int, maximum_length: int) -> list[str] | None:
+            value = candidate.get(key)
+            if not isinstance(value, list) or not value or len(value) > maximum_items:
+                return None
+            if not all(isinstance(item, str) and item.strip() for item in value):
+                return None
+            return [item.strip()[:maximum_length] for item in value]
+
+        title = text("title", "title", 120)
+        use_when = text("useWhen", "use_when", 500)
+        done_when = text("doneWhen", "done_when", 500)
+        output = text("output", "output", 500)
+        tags = strings("tags", 12, 50)
+        inputs = strings("inputs", 12, 200)
+        steps = strings("steps", 12, 500)
+        pitfalls = candidate.get("pitfalls", [])
+        if not isinstance(pitfalls, list) or len(pitfalls) > 12 or not all(
+            isinstance(item, str) for item in pitfalls
+        ):
+            return None
+        pitfalls = [item.strip()[:500] for item in pitfalls if item.strip()]
+        if not all((title, use_when, done_when, output, tags, inputs, steps)):
+            return None
+
+        searchable = " ".join([title, use_when, done_when, output, *tags, *inputs, *steps, *pitfalls])
+        if re.search(
+            r"(?i)(?:api[_-]?key|client[_-]?secret|password|access[_-]?token)\s*[:=]\s*\S+|"
+            r"-----BEGIN [^-]*PRIVATE KEY-----|https?://[^\s/@]+:[^\s/@]+@",
+            searchable,
+        ):
+            return None
+        if re.search(r"(?i)ignore (?:all )?previous instructions|disable (?:authentication|security)|bypass (?:security|tests)", searchable):
+            return None
+
+        canonical = json.dumps(
+            {"title": title, "useWhen": use_when, "steps": steps, "doneWhen": done_when},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        recipe_id = "SKL-GEN-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12].upper()
+        return SkillRecipe(
+            id=recipe_id,
+            agent="Coder Agent",
+            title=title,
+            tags=tags,
+            use_when=use_when,
+            inputs=inputs,
+            steps=steps,
+            done_when=done_when,
+            pitfalls=pitfalls,
+            output=output,
+            version="1.0.0",
+            status="draft",
+        )
+
+    def save_repair_candidate(self, recipe: SkillRecipe, *, build_id: str) -> SkillRecipe:
+        try:
+            existing = self.get(recipe.id)
+        except KeyError:
+            existing = None
+        if existing is not None:
+            return existing
+        recipe = recipe.model_copy(update={
+            "status": "draft",
+            "audit": recipe.audit + [AuditEvent(
+                time=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                stage="Evolver",
+                message="Candidate derived from a repaired deployment that passed its smoke test; human review required.",
+                agent="Skill Evolver",
+                metadata={"buildId": build_id, "evidence": "successful-deployment-repair"},
+            )],
+        })
+        self._repository.save(recipe)
+        return recipe
 
     def decide(self, recipe_id: str, *, decision: str, reason: str = "") -> SkillRecipe:
         recipe = self.get(recipe_id)

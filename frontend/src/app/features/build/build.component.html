@@ -252,6 +252,11 @@
                 @else if (currentBuild.deploymentStatus === 'failed') { <p>Azure deployment failed. Check the build timeline for the deployment error and open the feature branch to inspect the generated source.</p> }
                 @else { <p>{{ currentBuild.featureBranch ? 'The reviewed source is committed to GitHub. Azure Container Apps deployment is starting.' : 'After approval, reviewed source will be committed to a new feature branch and deployed to Azure Container Apps.' }}</p> }
               </div>
+              @if (currentBuild.deploymentStatus === 'succeeded' && currentBuild.skillProposal; as proposal) {
+                @if (proposal.recipe; as proposedSkill) {
+                  <div class="skill-banner"><div><span>DEPLOYMENT-VERIFIED SKILL DRAFT</span><strong>{{ proposedSkill.title }} {{ proposedSkill.version }}</strong><small>{{ proposal.reason }} Human review is still required before retrieval.</small></div><a class="secondary-button" routerLink="/skills">Review in Skill Registry →</a></div>
+                }
+              }
               @if (currentBuild.approvalGate === 'release') { <div class="stage-footer"><button class="primary-button" type="button" [disabled]="approvingGate !== null" (click)="approve('release')">{{ approvingGate === 'release' ? 'Approving…' : 'Approve and Deploy' }}</button></div> }
             </div>
           }
