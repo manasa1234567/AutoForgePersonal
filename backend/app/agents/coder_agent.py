@@ -145,9 +145,9 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                 instructions=instructions,
             )
             response = await agent.run(json.dumps(context, ensure_ascii=False))
-            data = SpecAgent._parse_json_response(str(response))
-            files = self._ensure_react_entrypoint(self._merge_repair_files(data, previous_artifacts))
             try:
+                data = SpecAgent._parse_json_response(str(response))
+                files = self._ensure_react_entrypoint(self._merge_repair_files(data, previous_artifacts))
                 files = self._validate_deployment_contract(files)
             except ValueError as exc:
                 # Deployment repairs have their own shared attempt budget.
@@ -155,18 +155,20 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                 # spending an invisible extra model call and losing the files.
                 if not retry_packaging:
                     raise
-                # A valid implementation can omit packaging metadata, especially
-                # on larger or less common stacks. Ask the same Coder Agent to
-                # repair that omission once while preserving all generated code.
+                # Retry malformed JSON/schema output as well as packaging once.
+                # Never guess missing source by patching malformed JSON locally.
                 repair_context = {
                     **context,
-                    "previousGeneratedArtifacts": files,
+                    "previousGeneratedArtifacts": files or previous_artifacts or {},
                     "criticAndSandboxFindings": [
                         {
                             "severity": "Critical",
-                            "file": "Dockerfile",
+                            "file": "Dockerfile" if files else None,
                             "issue": str(exc),
                             "recommendation": (
+                                "Return one complete valid JSON object matching the files schema. "
+                                "Use double-quoted JSON keys and escape quotes, newlines and backslashes "
+                                "inside file content strings. Do not include markdown, comments or trailing commas. "
                                 "Resolve the reported packaging defect, including any missing COPY source files "
                                 "or dependency manifests. Add or correct a root Dockerfile that builds and starts the complete approved "
                                 "stack on 0.0.0.0:8080, includes EXPOSE 8080, and installs all runtime dependencies "
@@ -181,7 +183,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                     json.dumps(repair_context, ensure_ascii=False)
                 )
                 data = SpecAgent._parse_json_response(str(response))
-                files = self._ensure_react_entrypoint(self._merge_repair_files(data, files))
+                files = self._ensure_react_entrypoint(self._merge_repair_files(data, files or previous_artifacts))
                 files = self._validate_deployment_contract(files)
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])

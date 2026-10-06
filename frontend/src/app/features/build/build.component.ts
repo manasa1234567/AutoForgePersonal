@@ -3,7 +3,7 @@
 import { CommonModule } from '@angular/common';
 
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { EMPTY, catchError, interval, startWith, switchMap, takeWhile } from 'rxjs';
+import { EMPTY, catchError, exhaustMap, interval, startWith, takeWhile } from 'rxjs';
 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -49,6 +49,7 @@ export class BuildComponent implements OnInit {
   build: BuildState | null = null;
 
   loadError: string | null = null;
+  statusRefreshError: string | null = null;
 
   blueprintDraft: BlueprintUpdate | null = null;
 
@@ -97,9 +98,9 @@ export class BuildComponent implements OnInit {
 
       startWith(0),
 
-      switchMap(() => this.api.getBuild(buildId).pipe(
+      exhaustMap(() => this.api.getBuild(buildId).pipe(
         catchError((error: unknown) => {
-          this.loadError = this.describeError(error, 'Unable to refresh build status; retrying automatically.');
+          this.statusRefreshError = 'Unable to reach the server for the latest status. Showing the last known state; retrying automatically.';
           this.cdr.markForCheck();
           return EMPTY;
         }),
@@ -130,6 +131,7 @@ export class BuildComponent implements OnInit {
       next: (build) => {
 
         this.build = build;
+        this.statusRefreshError = null;
         this.loadError = null;
         if (build.blueprint && !this.blueprintDraft) {
 
@@ -444,9 +446,9 @@ export class BuildComponent implements OnInit {
     interval(1500)
       .pipe(
         startWith(0),
-        switchMap(() => this.api.getBuild(buildId).pipe(
+        exhaustMap(() => this.api.getBuild(buildId).pipe(
           catchError((error: unknown) => {
-            this.loadError = this.describeError(error, 'Unable to refresh build status; retrying automatically.');
+            this.statusRefreshError = 'Unable to reach the server for the latest status. Showing the last known state; retrying automatically.';
             this.cdr.markForCheck();
             return EMPTY;
           }),
@@ -457,6 +459,7 @@ export class BuildComponent implements OnInit {
       .subscribe({
         next: (updatedBuild) => {
           this.build = updatedBuild;
+          this.statusRefreshError = null;
           this.loadError = null;
           if (updatedBuild.status !== 'Running') {
             this.approvingGate = null;

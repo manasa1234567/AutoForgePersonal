@@ -39,7 +39,7 @@ export class ApiService {
   }
 
   getBuild(buildId: string): Observable<BuildState> {
-    return this.http.get<BuildState>(`${this.baseUrl}/builds/${buildId}`);
+    return this.http.get<BuildState>(`${this.baseUrl}/builds/${buildId}`).pipe(timeout({ first: 30_000 }));
   }
 
   approve(buildId: string, gate: Exclude<ApprovalGate, null>): Observable<BuildState> {

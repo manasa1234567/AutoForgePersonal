@@ -41,6 +41,9 @@
       </section>
 
       <section class="panel stage-panel">
+        @if (statusRefreshError) {
+          <div class="build-error" role="status"><strong>Status update interrupted</strong><span>{{ statusRefreshError }}</span></div>
+        }
         @if (loadError) {
           <div class="build-error" role="alert"><strong>Analysis request failed</strong><span>{{ loadError }}</span></div>
         }
@@ -292,6 +295,8 @@
       </aside>
     </div>
   </section>
+} @else if (statusRefreshError) {
+  <section class="build-loading" role="status"><h2>Status update interrupted</h2><p>{{ statusRefreshError }}</p></section>
 } @else if (loadError) {
   <section class="build-loading" role="alert"><h2>Unable to load Forge workspace</h2><p>{{ loadError }}</p></section>
 } @else {
