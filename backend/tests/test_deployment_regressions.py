@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.agents.coder_agent import CoderAgent, CoderResult
+from app.agents.coder_agent import CoderAgent, CoderOutputError, CoderResult
 from app.agents.critic_agent import CriticAgent, CriticResult
 from app.agents.deployment_contract import missing_copy_sources, stage_copy_issues
 from app.models.schemas import Blueprint, BuildCreate, CriticFinding, DeploymentCallback, ProofResult, SecurityReview
@@ -25,6 +25,25 @@ def blueprint():
 
 
 class DeploymentRegressions(unittest.TestCase):
+    def test_failed_generation_retains_diagnostics_without_approving_artifacts(self):
+        async def scenario():
+            store = Orchestrator(build_repository=SnapshotRepository())
+            build = store.create(BuildCreate(source_type="usecase", title="Hello", source_text="Hello page"))
+            build.blueprint = blueprint()
+            store._build_repository.save(build)
+            files = {"Dockerfile": "COPY backend/app /app", "backend/main.py": "app = None"}
+            history = [{"attempt": 1, "issue": "missing backend/app", "artifactPaths": sorted(files)}]
+            store._agent_service.run_coder_agent = AsyncMock(side_effect=CoderOutputError("missing backend/app", files, history))
+            await store._complete_approval(build.id, "blueprint")
+            saved = store.get(build.id)
+            self.assertEqual(saved.status, "Failed")
+            self.assertIsNone(saved.proof)
+            self.assertEqual(saved.generation_failure["artifacts"], files)
+            self.assertEqual(saved.generation_failure["validationHistory"], history)
+            self.assertEqual(saved.audit[-1].metadata["failedStage"], "Forge")
+            self.assertEqual(saved.deployment_status, "not_started")
+        asyncio.run(scenario())
+
     def test_final_workflow_callback_preserves_newer_repair_failure(self):
         store = Orchestrator(build_repository=SnapshotRepository())
         build = store.create(BuildCreate(source_type="usecase", title="Hello", source_text="Hello page"))

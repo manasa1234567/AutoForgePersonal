@@ -29,6 +29,7 @@ from .jira_client import JiraClient
 from .job_dispatcher import BuildJobDispatcher, InProcessBuildJobDispatcher
 from .source_documents import extract_source_documents
 from .github_publisher import GitHubPublisher
+from ..agents.coder_agent import CoderOutputError
 
 
 class Orchestrator:
@@ -1654,6 +1655,24 @@ class Orchestrator:
             try:
                 await self._forge(build)
 
+            except CoderOutputError as exc:
+                # Rejected artifacts are diagnostics, never approved proof.
+                # Keep them so a generation failure can be inspected rather
+                # than forcing another blind build of the same application.
+                build.generation_failure = {
+                    "artifacts": exc.files,
+                    "validationHistory": exc.validation_history,
+                    "issue": str(exc),
+                }
+                self._fail(build, str(exc))
+                build.audit[-1].metadata = {
+                    "failedStage": "Forge",
+                    "generationAttempts": len(exc.validation_history),
+                    "artifactPaths": sorted(exc.files),
+                }
+                self._build_repository.save(build)
+                return
+
             except Exception as exc:
                 self._fail(build, str(exc))
                 self._build_repository.save(build)
@@ -1855,6 +1874,7 @@ class Orchestrator:
         build: BuildState,
         message: str,
     ) -> None:
+        failed_stage = build.stage
         build.status = "Failed"
         build.stage = "Error"
         build.error = message
@@ -1871,6 +1891,7 @@ class Orchestrator:
             message,
             "Orchestrator",
             severity="error",
+            metadata={"failedStage": failed_stage},
         )
 
     @staticmethod

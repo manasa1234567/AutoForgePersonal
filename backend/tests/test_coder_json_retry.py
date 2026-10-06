@@ -74,4 +74,18 @@ class CoderJsonRetry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.agent.run.await_count, 3)
         self.assertIn("frontend/build", str(error.exception))
         self.assertIn("Dockerfile", error.exception.files)
+        self.assertEqual(len(error.exception.validation_history), 3)
         self.credential.close.assert_called_once()
+
+    async def test_repairs_include_actual_inventory_and_prior_failures(self):
+        def response(source):
+            return json.dumps({"files": [
+                {"path": "Dockerfile", "content": f"FROM python:3.11\nCOPY {source} /app\nEXPOSE 8080\n"},
+                {"path": "backend/main.py", "content": "app = None\n"},
+            ]})
+        with self.assertRaises(CoderOutputError):
+            await self.generate([response("frontend/build"), response("backend/app"), response("backend/app")])
+        context = json.loads(self.agent.run.call_args_list[2].args[0])
+        self.assertEqual(context["availableArtifactPaths"], ["Dockerfile", "backend/main.py"])
+        self.assertIn("frontend/build", context["generationValidationHistory"][0]["issue"])
+        self.assertIn("backend/app", context["generationValidationHistory"][1]["issue"])

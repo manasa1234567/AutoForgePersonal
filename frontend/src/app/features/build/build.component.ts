@@ -186,7 +186,18 @@ export class BuildComponent implements OnInit {
 
   get stageIndex(): number {
 
-    const stage = this.build?.stage;
+    let stage = this.build?.stage;
+    if (stage === 'Error' && this.build) {
+      const failure = [...this.build.audit].reverse().find(event => event.stage === 'Error');
+      const failedStage = failure?.metadata['failedStage'];
+      if (typeof failedStage === 'string' && ['Understand', 'Design', 'Forge', 'Prove', 'Release'].includes(failedStage)) {
+        stage = failedStage as BuildStage;
+      } else {
+        // Older build records do not store the stage of failure.
+        stage = this.build.progress >= 90 ? 'Release' : this.build.progress >= 70 ? 'Prove'
+          : this.build.progress >= 58 ? 'Forge' : this.build.progress >= 38 ? 'Design' : 'Understand';
+      }
+    }
 
     const indexByStage: Record<BuildStage, number> = {
 
@@ -463,9 +474,9 @@ export class BuildComponent implements OnInit {
           this.loadError = null;
           if (updatedBuild.status !== 'Running') {
             this.approvingGate = null;
-            this.loadError = updatedBuild.status === 'Failed'
-              ? updatedBuild.error ?? 'The approved workflow failed. Review the build timeline for details.'
-              : null;
+            // A persisted workflow failure has its own banner. loadError is
+            // reserved for request failures, so one failure is shown once.
+            this.loadError = null;
           }
           this.cdr.markForCheck();
         },

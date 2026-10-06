@@ -298,6 +298,7 @@ class BuildState(ApiModel):
 
     blueprint: Blueprint | None = None
     proof: ProofResult | None = None
+    generation_failure: dict[str, Any] = Field(default_factory=dict)
     release: ReleaseResult | None = None
     security_review: SecurityReview | None = None
     deployment_plan: DeploymentPlan | None = None

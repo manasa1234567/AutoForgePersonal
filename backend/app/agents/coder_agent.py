@@ -31,9 +31,11 @@ class CoderResult:
 class CoderOutputError(RuntimeError):
     """Invalid model output, with path/size-validated candidate files for repair."""
 
-    def __init__(self, detail: str, files: dict[str, str] | None = None):
+    def __init__(self, detail: str, files: dict[str, str] | None = None,
+                 validation_history: list[dict[str, Any]] | None = None):
         super().__init__(f"Foundry Coder Agent returned invalid output: {detail}")
         self.files = dict(files or {})
+        self.validation_history = list(validation_history or [])
 
 
 class CoderAgent:
@@ -132,6 +134,8 @@ For TypeScript forms, keep input data and validation errors separately typed. Er
 Do not add a string index signature such as [key: string]: string to a form-data interface that also contains arrays or nested objects; those fields do not satisfy the index signature and cause TS2411. Declare each data field explicitly, and use a separate mapped type for validation errors.
 
 For packaging repairs, inspect the whole container startup chain in one pass: resolve each COPY --from source against that stage's WORKDIR and COPY destinations; install or copy console scripts as well as Python libraries (or invoke installed Python modules with python -m); copy frontend output to the exact directory used by the static server; and proxy frontend API routes to the actual backend port. Do not assume an earlier build stage's working directory carries into the next stage. Keep generated frontend requests consistent with the backend route paths. Do not return HTTP 200 for a missing frontend or failed startup just to satisfy a health check.
+
+Before returning the initial artifact set, compare every literal Dockerfile COPY source with the files paths in your own JSON response. Use the actual emitted folder layout, not a template's assumed backend/app layout. Check all sources together, including manifests, backend packages, frontend configuration and startup modules. When generationValidationHistory is supplied, this is a targeted packaging repair: preserve application source and correct the full packaging chain against availableArtifactPaths. Do not regenerate unrelated features or introduce a different folder layout while repairing Dockerfile paths.
 """
         instructions += """
 
@@ -139,6 +143,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
 """
 
         files = None
+        validation_history: list[dict[str, Any]] = []
         try:
             agent = Agent(
                 client=FoundryChatClient(project_endpoint=endpoint, model=model, credential=credential),
@@ -157,6 +162,11 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                     files = self._validate_deployment_contract(files, getattr(blueprint, "frontend", ""))
                     break
                 except ValueError as exc:
+                    validation_history.append({
+                        "attempt": attempt + 1,
+                        "issue": str(exc),
+                        "artifactPaths": sorted(files or {}),
+                    })
                     # Malformed JSON/schema gets one regeneration; packaging
                     # gets two repairs, always retaining the latest safe files.
                     if not retry_packaging or attempt >= (2 if candidate_valid else 1):
@@ -164,6 +174,9 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                     repair_context = {
                         **context,
                         "previousGeneratedArtifacts": files or previous_artifacts or {},
+                        "availableArtifactPaths": sorted(files or previous_artifacts or {}),
+                        "generationValidationHistory": validation_history,
+                        "repairMode": "packaging" if candidate_valid else "response_schema",
                         "criticAndSandboxFindings": [
                             {
                                 "severity": "Critical",
@@ -173,6 +186,15 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                                     "Return one complete valid JSON object matching the files schema. "
                                     "Use double-quoted JSON keys and escape quotes, newlines and backslashes "
                                     "inside file content strings. Do not include markdown, comments or trailing commas. "
+                                    "Use availableArtifactPaths as the exact source inventory. Every literal "
+                                    "build-context COPY input must exist in that inventory or be a directory "
+                                    "containing listed files. Do not assume backend/app exists: if source is "
+                                    "backend/main.py, either copy the actual backend directory and align CMD "
+                                    "with main:app, or return a complete, consistent package structure. "
+                                    "Review ALL COPY instructions, startup commands and imports together. "
+                                    "Resolve every issue in generationValidationHistory; do not reintroduce "
+                                    "an earlier defect while fixing the latest one. Preserve working source "
+                                    "and prefer correcting Dockerfile paths over moving application files. "
                                     "A missing frontend build/dist directory is generated output, not source: "
                                     "build it from the existing frontend source in a named Docker stage and "
                                     "COPY --from=<stage> the actual output path into the runtime stage. "
@@ -228,7 +250,7 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
             # model responses all look like an opaque Foundry request failure.
             detail = str(exc).strip().replace("\n", " ")[:300]
             raise CoderOutputError(
-                detail or 'the response did not match the artifact schema', files
+                detail or 'the response did not match the artifact schema', files, validation_history
             ) from exc
         except Exception as exc:
             raise RuntimeError(f"Foundry Coder Agent request failed ({type(exc).__name__})") from exc

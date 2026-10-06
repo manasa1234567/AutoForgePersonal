@@ -35,6 +35,14 @@ builds stopped at this stage must restart Forge after the updated backend is
 deployed; rerunning a deployment workflow cannot fix a build with no published
 artifacts.
 
+Packaging repair requests include the exact available artifact paths and the
+accumulated validation history. A fix must resolve earlier defects as well as
+the latest one. Exhausted generation failures retain their path-validated
+candidate files and validation history in `generationFailure`, separately from
+approved proof artifacts. The error audit event records the failed stage and
+attempt count; the UI keeps that stage selected instead of resetting to
+Understand and displays the persisted failure once.
+
 The workflow builds the generated root Dockerfile, starts that image locally,
 and checks its HTTP root. If packaging, compilation, dependency installation,
 or startup fails, it sends bounded, redacted diagnostics and the exact commit
