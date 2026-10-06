@@ -68,6 +68,7 @@ class AgentService:
         skills: list[SkillRecipe] | None = None,
         previous_artifacts: dict[str, str] | None = None,
         repair_findings: list[dict[str, Any]] | None = None,
+        retry_packaging: bool = True,
     ) -> CoderResult:
         return await self.coder_agent.generate(
             title=title,
@@ -77,6 +78,7 @@ class AgentService:
             skills=skills,
             previous_artifacts=previous_artifacts,
             repair_findings=repair_findings,
+            retry_packaging=retry_packaging,
         )
 
     async def run_critic_agent(

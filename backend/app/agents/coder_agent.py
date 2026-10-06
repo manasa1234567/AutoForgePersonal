@@ -27,6 +27,14 @@ class CoderResult:
     skill_proposal: dict[str, Any] | None = None
 
 
+class CoderOutputError(RuntimeError):
+    """Invalid model output, with path/size-validated candidate files for repair."""
+
+    def __init__(self, detail: str, files: dict[str, str] | None = None):
+        super().__init__(f"Foundry Coder Agent returned invalid output: {detail}")
+        self.files = dict(files or {})
+
+
 class CoderAgent:
     """Generate a bounded code artifact set from the human-approved blueprint."""
 
@@ -45,6 +53,7 @@ class CoderAgent:
         skills: list[SkillRecipe] | None = None,
         previous_artifacts: dict[str, str] | None = None,
         repair_findings: list[dict[str, Any]] | None = None,
+        retry_packaging: bool = True,
     ) -> CoderResult:
         if os.getenv("FOUNDRY_PROJECT_ENDPOINT"):
             return await self._generate_with_foundry(
@@ -55,6 +64,7 @@ class CoderAgent:
                 skills=skills or [],
                 previous_artifacts=previous_artifacts,
                 repair_findings=repair_findings,
+                retry_packaging=retry_packaging,
             )
         return self._local_scaffold(title=title, blueprint=blueprint, requirements=requirements)
 
@@ -68,6 +78,7 @@ class CoderAgent:
         skills: list[SkillRecipe],
         previous_artifacts: dict[str, str] | None = None,
         repair_findings: list[dict[str, Any]] | None = None,
+        retry_packaging: bool = True,
     ) -> CoderResult:
         endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
         model = os.getenv("FOUNDRY_CODER_MODEL") or os.getenv("FOUNDRY_MODEL", "")
@@ -126,6 +137,7 @@ For packaging repairs, inspect the whole container startup chain in one pass: re
 Only during a repair request with previousGeneratedArtifacts and actual critic/sandbox diagnostics, you may return an optional top-level skillProposal object if the successful fix teaches a reusable, stack-neutral engineering procedure. Return null when the fix is task-specific or not proven reusable. The object fields are title, tags, useWhen, inputs, steps, doneWhen, pitfalls, and output. Do not include customer names, secrets, internal URLs, or unverified claims. A proposed skill remains a draft until a human reviews it; never mark it approved.
 """
 
+        files = None
         try:
             agent = Agent(
                 client=FoundryChatClient(project_endpoint=endpoint, model=model, credential=credential),
@@ -138,6 +150,11 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
             try:
                 files = self._validate_deployment_contract(files)
             except ValueError as exc:
+                # Deployment repairs have their own shared attempt budget.
+                # Return the candidate and diagnostics to that loop instead of
+                # spending an invisible extra model call and losing the files.
+                if not retry_packaging:
+                    raise
                 # A valid implementation can omit packaging metadata, especially
                 # on larger or less common stacks. Ask the same Coder Agent to
                 # repair that omission once while preserving all generated code.
@@ -156,16 +173,16 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
                                 "in the final image. Keep backend static-file paths consistent with the final image's "
                                 "frontend location. Preserve the existing application and all approved features."
                             ),
-                        }
+                        },
+                        *(repair_findings or []),
                     ],
                 }
                 response = await agent.run(
                     json.dumps(repair_context, ensure_ascii=False)
                 )
                 data = SpecAgent._parse_json_response(str(response))
-                files = self._validate_deployment_contract(
-                    self._ensure_react_entrypoint(self._merge_repair_files(data, files))
-                )
+                files = self._ensure_react_entrypoint(self._merge_repair_files(data, files))
+                files = self._validate_deployment_contract(files)
             allowed_skills = {skill.id: skill.version for skill in skills}
             raw_skills = data.get("skillsUsed", [])
             skills_used: list[SkillUsage] = []
@@ -205,8 +222,8 @@ Only during a repair request with previousGeneratedArtifacts and actual critic/s
             # Keep the safe validation detail: otherwise empty or oversized
             # model responses all look like an opaque Foundry request failure.
             detail = str(exc).strip().replace("\n", " ")[:300]
-            raise RuntimeError(
-                f"Foundry Coder Agent returned invalid output: {detail or 'the response did not match the artifact schema'}"
+            raise CoderOutputError(
+                detail or 'the response did not match the artifact schema', files
             ) from exc
         except Exception as exc:
             raise RuntimeError(f"Foundry Coder Agent request failed ({type(exc).__name__})") from exc

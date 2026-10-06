@@ -133,4 +133,35 @@ def packaging_issues(artifacts: dict[str, str]) -> list[str]:
     return [
         f"Dockerfile COPY requires missing project source: {source}."
         for source in missing_copy_sources(artifacts)
-    ] + stage_copy_issues(artifacts)
+    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts)
+
+
+def dependency_manifest_issues(artifacts: dict[str, str]) -> list[str]:
+    """Reject known incompatible declarations; do not rewrite versions or locks."""
+    issues = []
+    for path, content in artifacts.items():
+        if path.rsplit("/", 1)[-1] != "package.json":
+            continue
+        try:
+            package = json.loads(content)
+        except ValueError:
+            continue
+        if not isinstance(package, dict):
+            continue
+        deps = package.get("dependencies", {})
+        dev = package.get("devDependencies", {})
+        if not isinstance(deps, dict) or not isinstance(dev, dict):
+            continue
+        combined = {**deps, **dev}
+        cra = combined.get("react-scripts")
+        ts = combined.get("typescript")
+        # Limit inference to simple exact/caret/tilde versions. Other semver
+        # ranges, workspace references and overrides require the real resolver.
+        if (isinstance(cra, str) and re.fullmatch(r"[~^]?5\.0\.1", cra.strip())
+                and isinstance(ts, str) and re.fullmatch(r"[~^]?[5-9]\d*\.\d+\.\d+", ts.strip())):
+            issues.append(
+                f"{path}: react-scripts 5.0.1 requires TypeScript ^3.2.1 or ^4, "
+                f"but typescript is {ts}. Select compatible dependencies and update any lockfile; "
+                "do not use --force or --legacy-peer-deps to hide the conflict."
+            )
+    return issues

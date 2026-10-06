@@ -6,6 +6,7 @@ import os
 import re
 
 from ..models.schemas import DeploymentCallback, SkillProposal
+from ..agents.coder_agent import CoderOutputError
 from .github_publisher import GitHubPublisher
 from .skill_registry import skill_registry
 
@@ -36,6 +37,7 @@ async def repair_deployment(store, build_id: str, callback: DeploymentCallback) 
         detail = "Timed out while repairing/reviewing source (30-minute limit)." if isinstance(exc, TimeoutError) else (str(exc) or type(exc).__name__)
         build.error = f"Automatic deployment repair stopped: {clean_diagnostics(detail)[:800]}"
         store._set_agent(build, "Coder Agent", "Failed", build.error)
+        store._set_agent(build, "Deployer Agent", "Failed", build.error)
         store._add_event(build, "Deployment Repair", build.error, "Orchestrator", severity="error")
         store._build_repository.save(build)
 
@@ -65,11 +67,40 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
         build = store.get(build_id)
         if not build.deployment_repairing or build.deployment_commit != callback.commit_sha:
             return
-        repaired = await store._agent_service.run_coder_agent(
-            title=build.title, blueprint=build.blueprint,
-            requirements=build.requirements, acceptance_criteria=build.acceptance_criteria,
-            previous_artifacts=previous, repair_findings=feedback,
-        )
+        try:
+            repaired = await store._agent_service.run_coder_agent(
+                title=build.title, blueprint=build.blueprint,
+                requirements=build.requirements, acceptance_criteria=build.acceptance_criteria,
+                previous_artifacts=previous, repair_findings=feedback,
+                retry_packaging=False,
+            )
+        except CoderOutputError as exc:
+            current = store.get(build_id)
+            if not current.deployment_repairing or current.deployment_commit != callback.commit_sha:
+                return
+            blocker = {"severity": "High", "file": None,
+                       "issue": clean_diagnostics(str(exc)),
+                       "recommendation": "Correct the output/packaging defect while preserving the previous review fixes. Keep the existing package manager; do not invent lockfiles or reference absent COPY inputs."}
+            current.metrics.self_heal_iterations += 1
+            current.metrics.tool_calls += 1
+            current.deployment_repair_review = _safe_report({
+                "attempt": current.deployment_repair_attempts,
+                "reviewer": "Coder output validation", "blockers": [blocker],
+            })
+            store._add_event(current, "Deployment Repair",
+                             f"Coder output rejected repair {current.deployment_repair_attempts}/3: {blocker['issue']}",
+                             "Coder Agent", severity="warning", metadata={"review": current.deployment_repair_review})
+            if current.deployment_repair_attempts >= 3:
+                store._build_repository.save(current)
+                raise RuntimeError(f"Repair limit reached (3); {blocker['issue']}") from exc
+            current.deployment_repair_attempts += 1
+            store._set_agent(current, "Coder Agent", "Running",
+                             f"Correcting generated output (attempt {current.deployment_repair_attempts}/3)")
+            store._build_repository.save(current)
+            previous = {**previous, **exc.files}
+            # Keep original installer errors AND preceding review findings.
+            feedback = [*feedback, blocker]
+            continue
         if repaired.mode != "foundry-agent":
             raise RuntimeError("Automatic repair requires the configured Coder Agent.")
         artifacts = {**previous, **repaired.files}
