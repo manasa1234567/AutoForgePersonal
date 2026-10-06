@@ -243,7 +243,7 @@ export class BuildComponent implements OnInit {
 
       Replay: 'Run Replay & Observability',
 
-      Error: 'Forge stopped',
+      Error: 'Workflow stopped',
 
     };
 
@@ -270,7 +270,7 @@ export class BuildComponent implements OnInit {
 
       Replay: 'Review the complete execution timeline, audit trail and AgentOps metrics.',
 
-      Error: 'Review the failure and restart the Forge after the input is corrected.',
+      Error: 'Review the reported failure before retrying the workflow.',
 
     };
 

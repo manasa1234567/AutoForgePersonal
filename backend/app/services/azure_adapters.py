@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import httpx
@@ -62,7 +63,7 @@ class AzureAdapters:
             chunks = [text[index : index + 9_500] for index in range(0, len(text), 9_000)] or [""]
             async with httpx.AsyncClient(timeout=30.0) as client:
                 for chunk in chunks:
-                    response = await client.post(
+                    response = await self._shield_request(client,
                         f"{endpoint}/contentsafety/text:shieldPrompt",
                         params={"api-version": os.getenv("AZURE_PROMPT_SHIELDS_API_VERSION", "2024-09-01")},
                         headers=headers,
@@ -98,6 +99,31 @@ class AzureAdapters:
             raise RuntimeError(f"Azure Prompt Shields check failed ({type(exc).__name__}); analysis stopped") from exc
         finally:
             await credential.close()
+
+    @staticmethod
+    async def _shield_request(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+        """Retry only transient provider failures, without skipping any chunk."""
+        for attempt in range(3):
+            response = None
+            try:
+                response = await client.post(url, **kwargs)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in {408, 429, 500, 502, 503, 504} or attempt == 2:
+                    raise
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == 2:
+                    raise
+            delay = float(2 ** attempt)
+            if response is not None:
+                retry_after = response.headers.get("Retry-After", "")
+                try:
+                    delay = max(delay, min(float(retry_after), 10.0))
+                except ValueError:
+                    pass
+            await asyncio.sleep(delay)
+        raise RuntimeError("Prompt Shields retry limit reached")
 
     async def deploy(self, build_id: str) -> dict[str, str]:
         raise RuntimeError(
