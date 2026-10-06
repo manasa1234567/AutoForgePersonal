@@ -1,0 +1,145 @@
+/* Using CSS Modules - well structured CSS with BEM-like naming conventions */
+
+.container {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+  background-color: #f9fafb;
+  min-height: 100vh;
+}
+
+.header {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 1rem;
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: #111827;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.statCard {
+  background-color: #fff;
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: default;
+  transition: box-shadow 0.2s ease-in-out;
+  outline-offset: 2px;
+}
+
+.statCard:focus,
+.statCard:hover {
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.1);
+}
+
+.statIcon {
+  font-size: 2.5rem;
+  margin-bottom: 0.6rem;
+  color: #2563eb; /* Blue shade */
+}
+
+.statTitle {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+  color: #374151;
+}
+
+.statValue {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.activitySection {
+  background-color: #ffffff;
+  border-radius: 0.5rem;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.activityTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: #111827;
+}
+
+.activityList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activityItem {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: default;
+  outline-offset: 2px;
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityItem:focus,
+.activityItem:hover {
+  background-color: #f3f4f6;
+}
+
+.activityText {
+  font-size: 1rem;
+  color: #4b5563;
+  margin: 0;
+  max-width: 80%;
+  word-break: break-word;
+}
+
+.activityTime {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  white-space: nowrap;
+  margin-left: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .title {
+    font-size: 1.75rem;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .statValue {
+    font-size: 1.4rem;
+  }
+
+  .activityText {
+    max-width: 65%;
+  }
+
+  .activityTime {
+    font-size: 0.75rem;
+  }
+}
