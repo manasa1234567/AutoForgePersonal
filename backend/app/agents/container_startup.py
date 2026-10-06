@@ -4,6 +4,48 @@ import ast
 import json
 import posixpath
 import re
+import shlex
+
+
+def _copy_node_build_sources(files: dict[str, str], dockerfile: str) -> str:
+    """Complete explicit manifest-only COPY layouts before a standalone build."""
+    workdir = "/"
+    manifests = {}
+    directories = []
+    output = []
+    for line in dockerfile.splitlines():
+        command, _, value = line.strip().partition(" ")
+        if command.upper() == "FROM":
+            workdir, manifests, directories = "/", {}, []
+        elif command.upper() == "WORKDIR":
+            workdir = posixpath.normpath(posixpath.join(workdir, value))
+        elif command.upper() == "COPY" and not value.startswith("--") and not any(c in value for c in "$*\\"):
+            try:
+                parts = json.loads(value) if value.startswith("[") else shlex.split(value)
+            except ValueError:
+                parts = []
+            if len(parts) == 2 and all(isinstance(p, str) for p in parts):
+                source = posixpath.normpath(parts[0])
+                destination = posixpath.normpath(posixpath.join(workdir, parts[1]))
+                if posixpath.basename(source) == "package.json" and source in files:
+                    target_dir = posixpath.dirname(destination) if destination.endswith("package.json") else destination
+                    manifests[target_dir] = posixpath.dirname(source) or "."
+                elif source == "." or any(p.startswith(source + "/") for p in files):
+                    directories.append((source, destination))
+        elif re.fullmatch(r"RUN\s+npm run build\s*", line.strip()):
+            source = manifests.get(workdir)
+            if source and "$" not in workdir:
+                covered = any(
+                    (source == src or src == "." or source.startswith(src + "/"))
+                    and posixpath.normpath(posixpath.join(dest, posixpath.relpath(source, src))) == workdir
+                    for src, dest in directories
+                )
+                prefix = "" if source == "." else source + "/"
+                if not covered and any(p.startswith(prefix) and p.endswith(('.tsx', '.jsx', '.ts', '.js', '.html', '.vue', '.svelte')) for p in files):
+                    output.append("COPY " + json.dumps([source + "/", "./"]))
+                    directories.append((source, workdir))
+        output.append(line)
+    return "\n".join(output) + ("\n" if dockerfile.endswith("\n") else "")
 
 
 def _normalize_generated_asgi_wrapper(files: dict[str, str], dockerfile: str) -> str:
@@ -250,6 +292,7 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
                 )
         files[path] = requirements
     dockerfile = files.get("Dockerfile", "")
+    dockerfile = _copy_node_build_sources(files, dockerfile)
     dockerfile = _normalize_generated_asgi_wrapper(files, dockerfile)
     # Vite's HTML entry is a build input, outside src/. Complete only the
     # explicit root-package layout; custom roots/stages keep their semantics.

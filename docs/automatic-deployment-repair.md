@@ -59,6 +59,17 @@ a separate run.
 
 ## Limits
 
+Generated npm projects resolve their lockfiles from the approved package.json
+using npm in an isolated Node 22 packaging container. Model-authored checksums
+and incomplete dependency trees are replaced with package-manager output;
+lifecycle scripts are disabled during resolution. Peer dependency errors still
+fail, and package download integrity checks remain enabled. Declared dependency
+ranges may select newer versions when a build is repeated. The resolved locks
+are saved as GitHub Actions artifacts for 14 days; they are build-context files,
+not an automatic commit to the reviewed feature branch. Other package managers
+retain their own lockfiles. The generated Dockerfile must use a compatible Node
+runtime and still passes the normal image build and startup checks.
+
 - Azure authentication, registry push permissions, Azure provisioning and cloud
   smoke-test failures are reported rather than sent to Coder as source repairs.
 - A successful HTTP root check does not prove every feature or database operation

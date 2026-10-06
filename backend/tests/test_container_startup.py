@@ -10,6 +10,16 @@ from app.agents.container_startup import normalize_startup
 
 
 class ContainerStartupTests(unittest.TestCase):
+    def test_manifest_only_frontend_build_gets_source_copy(self):
+        from app.agents.container_startup import _copy_node_build_sources
+        files = {'frontend/package.json': '{}', 'frontend/src/App.jsx': 'export default 1;'}
+        dockerfile = 'FROM node:22\nWORKDIR /app\nCOPY ./frontend/package.json ./frontend/package.json\nWORKDIR /app/frontend\nRUN npm install\nRUN npm run build\n'
+        fixed = _copy_node_build_sources(files, dockerfile)
+        self.assertIn('COPY ["frontend/", "./"]\nRUN npm run build', fixed)
+        self.assertEqual(_copy_node_build_sources(files, fixed), fixed)
+        complete = dockerfile.replace('RUN npm run build', 'COPY ./frontend ./\nRUN npm run build')
+        self.assertEqual(_copy_node_build_sources(files, complete), complete)
+
     def frontend_fixture(self):
         return {
             "Dockerfile": 'FROM node:22 AS build\nFROM python:3.11-slim\nWORKDIR /app\n'

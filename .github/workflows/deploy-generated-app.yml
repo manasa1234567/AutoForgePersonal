@@ -266,6 +266,18 @@ jobs:
           fi
 
           IMAGE="$ACR_LOGIN_SERVER/autoforge-generated:$BUILD_ID-${DEPLOY_COMMIT:0:12}"
+          echo "build_context=$(realpath "$CONTEXT")" >> "$GITHUB_OUTPUT"
+          # Resolve model-authored npm locks with the package manager. This is
+          # staged build input only; generated source/manifests stay unchanged.
+          # Lifecycle scripts are disabled and no Azure/GitHub credentials enter
+          # this container. Non-npm projects are left to their own toolchains.
+          if find "$CONTEXT" -name package.json -not -path '*/node_modules/*' -print -quit | grep -q .; then
+            docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp --env npm_config_cache=/tmp/npm-cache \
+            --mount "type=bind,source=$(realpath "$CONTEXT"),target=/project" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/resolve-generated-npm-locks.cjs,target=/resolve-locks.cjs,readonly" \
+              node:22-alpine node /resolve-locks.cjs /project
+          fi
           echo registry > "$RUNNER_TEMP/deployment-phase"
           az acr login --name "$ACR_NAME"
           echo image_build > "$RUNNER_TEMP/deployment-phase"
@@ -324,6 +336,17 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "port=$PORT" >> "$GITHUB_OUTPUT"
+
+      - name: Save resolved npm lockfiles
+        if: always() && steps.image.outputs.build_context != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-npm-locks-${{ steps.config.outputs.build_id }}-${{ github.run_id }}
+          path: |
+            ${{ steps.image.outputs.build_context }}/**/package-lock.json
+            ${{ steps.image.outputs.build_context }}/**/npm-shrinkwrap.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Create or update generated Container App
         id: app
