@@ -11,3 +11,4 @@ asgiref
 itsdangerous
 pytest
 httpx
+pydantic-settings
