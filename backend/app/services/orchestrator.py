@@ -1359,7 +1359,10 @@ class Orchestrator:
             and callback.diagnostics and callback.commit_sha and build.deployment_commit == callback.commit_sha
             and build.deployment_repair_attempts < 3
         )
-        if can_repair and self._build_repository.claim_deployment_repair(build_id, callback.commit_sha):
+        claim = callback.commit_sha + ("-" + callback.repair_request_id if callback.repair_request_id else "")
+        if can_repair and self._build_repository.claim_deployment_repair(build_id, claim):
+            build.deployment_failure_diagnostics = callback.diagnostics
+            build.deployment_repair_review = {}
             build.deployment_repair_attempts += 1
             build.deployment_repairing = True
             build.deployment_status = "running"

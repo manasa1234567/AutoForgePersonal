@@ -111,6 +111,8 @@ When using Pydantic 2, use `constr(pattern=...)` for constrained strings. The `r
 """
         instructions += """
 
+Dependency manifests must list installable distribution/package names, not imported modules or submodules. Map each external import to its owning distribution, omit standard-library modules, and keep dependency versions compatible with the selected runtime. When installation fails, correct the actual manifest from the installer diagnostics without weakening dependency resolution or changing the approved stack.
+
 When previousGeneratedArtifacts and criticAndSandboxFindings identify a security issue, make the smallest complete code change that resolves the finding without hiding it, suppressing the scanner, or weakening security controls. Keep unaffected features and files intact.
 
 For TypeScript forms, keep input data and validation errors separately typed. Error messages must use a string-valued map such as Partial<Record<keyof FormData, string>> for both the errors state and the newErrors variable. Partial<FormData> is incorrect for messages when FormData has boolean or numeric fields. Preserve boolean checkbox values and numeric inputs in the actual form state. Do not use any, ts-ignore, or disable compiler checks to hide errors.

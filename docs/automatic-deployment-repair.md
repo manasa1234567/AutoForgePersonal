@@ -18,6 +18,8 @@ force npm installation, or bypass security review.
    **Actions → Deploy generated app to Azure Container Apps → Run workflow**.
    Select `main` for **Use workflow from** and enter the existing feature branch
    in the **branch** input. This uses the current workflow with that branch's code.
+   If automatic repair previously stopped on that commit, tick **retry_repair**.
+   This allows a new, deduplicated request but does not reset the three-attempt budget.
    Do not use **Re-run jobs** on an old run: it retains the old workflow revision.
 
 ## Flow
@@ -34,9 +36,17 @@ without force-pushing or overwriting a newer commit. Its push triggers the next
 deployment workflow run through the normal feature-branch path. Repair commits
 do not use `[skip ci]`, so no separate Actions dispatch is required.
 
-Each build permits at most three repair commits. An unchanged response, failed
-review, model failure, permission failure, or timeout stops with an explicit
-error. Failed worker tasks are not blindly repeated. GitHub polls the backend;
+Each build permits at most three Coder repair attempts, including candidates
+rejected before publication. Critic or Security blockers are returned to Coder
+with the latest candidate files, until those reviews pass or the budget is used.
+The original installation/build log is saved in `deploymentFailureDiagnostics`;
+the latest candidate's checks/findings/blockers are in `deploymentRepairReview`.
+Rejected candidates do not replace the approved/published artifacts.
+An unchanged response, exhausted budget, model failure, permission failure, or
+timeout stops with concrete blockers rather than a truncated general review summary.
+The overall worker deadline is 30 minutes; the workflow polling window includes
+time for those bounded reviews. Successful repairs finish polling immediately.
+Failed worker tasks are not blindly repeated. GitHub polls the backend;
 if a worker restarts, the polling timeout reports failure rather than leaving
 the build running forever. Azure mode stores repair claims in the existing
 workspace Blob container; local mode remains process-local.

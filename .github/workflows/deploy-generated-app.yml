@@ -12,6 +12,10 @@ on:
         description: Existing feature branch to deploy
         required: true
         type: string
+      retry_repair:
+        description: Allow a fresh repair of a previously failed commit (remaining attempt budget only)
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -23,7 +27,7 @@ concurrency:
 
 jobs:
   deploy:
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -418,6 +422,7 @@ jobs:
         if: failure() && env.AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN != ''
         env:
           BUILD_ID: ${{ steps.config.outputs.build_id }}
+          REPAIR_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_repair && github.run_id || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -446,13 +451,13 @@ jobs:
           detail = detail[-14000:] if phase in ('packaging', 'image_build', 'startup') else ''
           payload = {'branch': os.environ['DEPLOY_BRANCH'], 'status': 'failed',
                      'commitSha': os.environ.get('DEPLOY_COMMIT', ''), 'phase': phase,
-                     'diagnostics': detail,
+                     'diagnostics': detail, 'repairRequestId': os.environ.get('REPAIR_REQUEST_ID', ''),
                      'message': f'Generated application failed during {phase}. ' + detail[-700:]}
           (root / 'failure-callback.json').write_text(json.dumps(payload), encoding='utf-8')
           PY
           # POST is idempotent for this commit. Repeating it also polls repair
           # progress, including when the first acknowledgement was lost.
-          for attempt in {1..48}; do
+          for attempt in {1..128}; do
             STATUS=$(curl -sS --max-time 15 -o "$RUNNER_TEMP/repair-response.json" -w '%{http_code}' \
               -H "Authorization: Bearer $AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN" \
               -H 'Content-Type: application/json' -X POST \
@@ -471,7 +476,7 @@ jobs:
                 echo "Failure recorded; no further automatic repair is running."
                 exit 0
               fi
-              echo "Automatic source repair is in progress ($attempt/48)."
+              echo "Automatic source repair is in progress ($attempt/128)."
             fi
             sleep 15
           done

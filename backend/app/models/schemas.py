@@ -259,6 +259,7 @@ class DeploymentCallback(ApiModel):
     commit_sha: str = Field(default="", pattern=r"^(?:[a-f0-9]{40})?$")
     phase: str = Field(default="", max_length=40)
     diagnostics: str = Field(default="", max_length=16000)
+    repair_request_id: str = Field(default="", pattern=r"^(?:[0-9]{1,30})?$")
 
 
 class BuildMetrics(ApiModel):
@@ -308,6 +309,8 @@ class BuildState(ApiModel):
     deployment_commit: str = ""
     deployment_repair_attempts: int = 0
     deployment_repairing: bool = False
+    deployment_failure_diagnostics: str = ""
+    deployment_repair_review: dict[str, Any] = Field(default_factory=dict)
     skill_proposal: SkillProposal | None = None
     skills_used: list[SkillUsage] = Field(default_factory=list)
     agents: list[AgentState] = Field(default_factory=list)
