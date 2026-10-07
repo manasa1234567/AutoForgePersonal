@@ -52,6 +52,16 @@ async def get_events(build_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/{build_id}/retry-forge", status_code=202)
+async def retry_forge(build_id: str):
+    try:
+        return await store.retry_forge(build_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.get("/{build_id}/artifacts.zip")
 async def download_artifacts(build_id: str):
     try:

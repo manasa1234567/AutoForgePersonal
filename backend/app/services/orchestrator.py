@@ -288,6 +288,27 @@ class Orchestrator:
             self._fail(build, str(exc))
             self._build_repository.save(build)
 
+    async def retry_forge(self, build_id: str) -> BuildState:
+        build = self.get(build_id)
+        if build.status == "Running":
+            return build
+        approved = any(event.stage == "Approval" and event.metadata.get("gate") == "blueprint" for event in build.audit)
+        if (build.status != "Failed" or build.progress != 58 or build.blueprint is None
+                or build.proof is not None or not approved
+                or not build.generation_failure.get("artifacts")):
+            raise ValueError("Only a failed Forge with an approved blueprint and saved candidate can be retried.")
+        build.status = "Running"
+        build.stage = "Forge"
+        build.error = None
+        self._add_event(build, "Retry", "Resuming Forge with the approved blueprint and saved candidate files", "User")
+        self._set_agent(build, "Coder Agent", "Running", "Completing the saved application's packaging")
+        self._build_repository.save(build)
+        task = asyncio.create_task(self._complete_approval(build_id, "blueprint"))
+        self._approval_tasks[build_id] = task
+        task.add_done_callback(lambda completed, key=build_id:
+            self._approval_tasks.pop(key, None) if self._approval_tasks.get(key) is completed else None)
+        return build
+
     async def _understand(self, build: BuildState) -> None:
         build.status = "Running"
         build.stage = "Understand"
@@ -515,12 +536,21 @@ class Orchestrator:
             limit=5,
         )
 
+        resume = {}
+        if build.proof is None and build.generation_failure.get("artifacts"):
+            resume = {
+                "previous_artifacts": build.generation_failure["artifacts"],
+                "repair_findings": [{"severity": "Critical", "file": "Dockerfile", "kind": "generation_packaging",
+                    "issue": build.generation_failure.get("issue", "Complete the saved candidate's packaging."),
+                    "recommendation": "Preserve the saved application source and approved stack. Complete missing manifests and configuration; do not regenerate features."}],
+            }
         result = await self._agent_service.run_coder_agent(
             title=build.title,
             blueprint=build.blueprint,
             requirements=build.requirements,
             acceptance_criteria=build.acceptance_criteria,
             skills=coder_recipes,
+            **resume,
         )
 
         if result.mode == "foundry-agent":
@@ -536,6 +566,7 @@ class Orchestrator:
             generator_mode=result.mode,
             integration="Not run",
         )
+        build.generation_failure = {}
 
         build.skills_used.extend(result.skills_used)
 

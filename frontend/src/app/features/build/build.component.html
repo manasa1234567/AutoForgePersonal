@@ -275,6 +275,9 @@
               @if (canRetryAnalysis) {
                 <button class="primary-button" type="button" (click)="retryAnalysis()">Retry analysis</button>
               }
+              @if (canRetryForge) {
+                <button class="primary-button" type="button" (click)="retryForge()">Retry code generation</button>
+              }
               @if (artifactsZipUrl; as zipUrl) {
                 <a class="primary-button" [href]="zipUrl" download>Download available project files</a>
               } @else {

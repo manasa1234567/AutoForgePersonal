@@ -230,6 +230,32 @@ export class BuildComponent implements OnInit {
       && /HTTP (408|429|500|502|503|504)|ReadTimeout|ConnectTimeout|ReadError|ConnectError/.test(build.error);
   }
 
+  get canRetryForge(): boolean {
+    const build = this.build;
+    return !!build && build.status === 'Failed' && build.progress === 58 && !!build.blueprint && !build.proof
+      && Object.keys(build.generationFailure?.artifacts ?? {}).length > 0;
+  }
+
+  retryForge(): void {
+    if (!this.build || !this.canRetryForge) return;
+    const previous = this.build;
+    this.loadError = null;
+    this.build = { ...previous, status: 'Running' };
+    this.cdr.markForCheck();
+    this.api.retryForge(previous.id).subscribe({
+      next: build => {
+        this.build = build;
+        if (build.status === 'Running') this.watchApprovalProgress(build.id);
+        this.cdr.markForCheck();
+      },
+      error: error => {
+        this.build = previous;
+        this.loadError = this.describeError(error, 'Unable to retry code generation.');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   retryAnalysis(): void {
     if (!this.build || !this.canRetryAnalysis) return;
     this.loadError = null;

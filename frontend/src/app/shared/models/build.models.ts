@@ -191,6 +191,7 @@ export interface BuildState {
   agentMode: string;
   blueprint: Blueprint | null;
   proof: ProofResult | null;
+  generationFailure?: { artifacts?: Record<string, string>; issue?: string };
   release: ReleaseResult | null;
   securityReview: SecurityReview | null;
   deploymentPlan: DeploymentPlan | null;
