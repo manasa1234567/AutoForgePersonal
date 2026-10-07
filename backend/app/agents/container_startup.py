@@ -6,6 +6,7 @@ import posixpath
 import re
 import shlex
 from .poetry_packaging import resolve_poetry_before_install
+from .python_optional_dependencies import uses_pydantic_email
 
 
 def _copy_node_build_sources(files: dict[str, str], dockerfile: str) -> str:
@@ -244,7 +245,7 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
         root = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
         uses_email = any(
             name.startswith(root) and name.endswith(".py")
-            and re.search(r"(?m)^from pydantic import [^\n]*\bEmailStr\b", source)
+            and uses_pydantic_email(source)
             for name, source in files.items()
         )
         has_dependency = re.search(
