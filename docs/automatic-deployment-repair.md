@@ -92,9 +92,21 @@ lifecycle scripts are disabled during resolution. Peer dependency errors still
 fail, and package download integrity checks remain enabled. Declared dependency
 ranges may select newer versions when a build is repeated. The resolved locks
 are saved as GitHub Actions artifacts for 14 days; they are build-context files,
-not an automatic commit to the reviewed feature branch. Other package managers
-retain their own lockfiles. The generated Dockerfile must use a compatible Node
+not an automatic commit to the reviewed feature branch. Generated Poetry
+projects regenerate their model-authored locks immediately before dependency
+installation inside Docker, using that stage's selected Python and Poetry.
+The staged Dockerfile does not edit reviewed source or manifests. Real resolver
+and installation failures still fail the build; no force/ignore fallback is
+used. Other package managers retain their own lockfiles. The generated Dockerfile must use a compatible Node
 runtime and still passes the normal image build and startup checks.
+
+The workflow checks out current platform packaging tools separately from the
+generated application branch. This prevents older branches from omitting newly
+added resolvers when manually dispatched through the current main workflow.
+After installing these changes, older failed branches require Run workflow
+with main selected, rather than re-running the old workflow revision. A build
+that exhausted its repair budget still cannot claim successful deployment;
+package-mode or source defects need corrected generation and review.
 
 - Azure authentication, registry push permissions, Azure provisioning and cloud
   smoke-test failures are reported rather than sent to Coder as source repairs.

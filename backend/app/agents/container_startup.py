@@ -5,6 +5,7 @@ import json
 import posixpath
 import re
 import shlex
+from .poetry_packaging import resolve_poetry_before_install
 
 
 def _copy_node_build_sources(files: dict[str, str], dockerfile: str) -> str:
@@ -292,6 +293,7 @@ def normalize_startup(files: dict[str, str]) -> dict[str, str]:
                 )
         files[path] = requirements
     dockerfile = files.get("Dockerfile", "")
+    dockerfile = resolve_poetry_before_install(dockerfile)
     dockerfile = _copy_node_build_sources(files, dockerfile)
     dockerfile = _normalize_generated_asgi_wrapper(files, dockerfile)
     # Vite's HTML entry is a build input, outside src/. Complete only the

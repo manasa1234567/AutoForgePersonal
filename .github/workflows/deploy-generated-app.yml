@@ -43,6 +43,13 @@ jobs:
         with:
           ref: ${{ inputs.branch || github.ref }}
 
+      - name: Checkout current platform packaging tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .autoforge-platform
+          persist-credentials: false
+
       - name: Validate release configuration
         id: config
         shell: bash
@@ -279,9 +286,16 @@ jobs:
             docker run --rm --cap-drop ALL --security-opt no-new-privileges \
             --user "$(id -u):$(id -g)" --env HOME=/tmp --env npm_config_cache=/tmp/npm-cache \
             --mount "type=bind,source=$(realpath "$CONTEXT"),target=/project" \
-            --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/resolve-generated-npm-locks.cjs,target=/resolve-locks.cjs,readonly" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/.autoforge-platform/scripts/resolve-generated-npm-locks.cjs,target=/resolve-locks.cjs,readonly" \
               node:22-alpine node /resolve-locks.cjs /project
           fi
+          # Resolve generated Poetry locks with the exact Python/Poetry used by
+          # the application's Dockerfile. This staged Dockerfile leaves the
+          # reviewed source and manifests untouched; resolver failures still
+          # fail the real build and return diagnostics to automatic repair.
+          POETRY_DOCKERFILE="$RUNNER_TEMP/autoforge-packaged.Dockerfile"
+          python3 "$GITHUB_WORKSPACE/.autoforge-platform/scripts/stage-generated-poetry.py" "$DOCKERFILE" "$POETRY_DOCKERFILE"
+          DOCKERFILE="$POETRY_DOCKERFILE"
           echo registry > "$RUNNER_TEMP/deployment-phase"
           az acr login --name "$ACR_NAME"
           echo image_build > "$RUNNER_TEMP/deployment-phase"

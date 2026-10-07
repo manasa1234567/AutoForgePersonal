@@ -134,7 +134,52 @@ def packaging_issues(artifacts: dict[str, str]) -> list[str]:
     return [
         f"Dockerfile COPY requires missing project source: {source}."
         for source in missing_copy_sources(artifacts)
-    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts) + local_import_issues(artifacts) + uncopied_startup_issues(artifacts)
+    ] + stage_copy_issues(artifacts) + dependency_manifest_issues(artifacts) + local_import_issues(artifacts) + uncopied_startup_issues(artifacts) + poetry_project_issues(artifacts)
+
+
+def poetry_project_issues(artifacts: dict[str, str]) -> list[str]:
+    """Detect missing root packages, leaving actual resolution to Poetry."""
+    import tomllib
+    dockerfile = re.sub(r"\\\r?\n", " ", artifacts.get("Dockerfile", ""))
+    if not re.search(r"\bpoetry\s+install\b", dockerfile) or re.search(r"\bpoetry\s+install[^\n]*--no-root\b", dockerfile):
+        return []
+    issues = []
+    for path, content in artifacts.items():
+        if path.rsplit("/", 1)[-1] != "pyproject.toml":
+            continue
+        try:
+            project = tomllib.loads(content)
+        except tomllib.TOMLDecodeError:
+            issues.append(f"{path}: invalid TOML; correct the Python dependency manifest.")
+            continue
+        tool = project.get("tool", {})
+        poetry = tool.get("poetry", {}) if isinstance(tool, dict) else {}
+        build_system = project.get("build-system", {})
+        metadata = project.get("project", {})
+        if not isinstance(poetry, dict) or not isinstance(build_system, dict) or not isinstance(metadata, dict):
+            issues.append(f"{path}: invalid Poetry/project metadata; use TOML tables for package configuration.")
+            continue
+        if not poetry and build_system.get("build-backend") != "poetry.core.masonry.api":
+            continue
+        if poetry.get("package-mode") is False or poetry.get("packages"):
+            continue
+        name = poetry.get("name") or metadata.get("name")
+        if not isinstance(name, str):
+            continue
+        module = re.sub(r"[-.]", "_", name).lower()
+        root = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+        candidates = [root + module + "/", root + "src/" + module + "/"]
+        if root + module + ".py" in artifacts or any(any(p.startswith(prefix) for prefix in candidates) for p in artifacts):
+            continue
+        issues.append(
+            f"{path}: poetry install uses package mode but project {name!r} has no matching "
+            "root package in the generated files. For an application that runs local source "
+            "without installing a distribution, set [tool.poetry] package-mode = false or use "
+            "poetry install --no-root and copy the application source. For a packaged project, "
+            "declare the actual packages and copy source before installing the root project. "
+            "Preserve any required project console scripts."
+        )
+    return issues
 
 
 def uncopied_startup_issues(artifacts: dict[str, str]) -> list[str]:
