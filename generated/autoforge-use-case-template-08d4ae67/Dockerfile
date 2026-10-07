@@ -18,7 +18,7 @@ RUN python -m pip install --upgrade pip poetry && poetry config virtualenvs.crea
 FROM python:3.11-slim
 WORKDIR /app
 # Install runtime dependencies
-RUN python -m pip install --no-cache-dir fastapi uvicorn[standard] psycopg[binary]
+RUN python -m pip install --no-cache-dir fastapi==0.115.12 uvicorn[standard]==0.34.2 pydantic==2.11.3 psycopg[binary]
 
 # Copy backend code and dependencies
 COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
