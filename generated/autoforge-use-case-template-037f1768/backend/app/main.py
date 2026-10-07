@@ -31,24 +31,30 @@ app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 async def root():
     return {"message": "Learning Management System API is running"}
 
-# Serve the packaged UI at / while preserving API routes and static assets.
-from fastapi.responses import FileResponse as _AutoForgeFileResponse
-from fastapi.staticfiles import StaticFiles as _AutoForgeStaticFiles
+from fastapi.staticfiles import StaticFiles
 import os
 
 frontend_build_path = "/app/frontend/build"
 
-if not os.path.exists(frontend_build_path):
-    # If frontend build directory does not exist, log or handle gracefully
+# Mount static files for frontend UI
+if os.path.exists(frontend_build_path):
+    app.mount("/", StaticFiles(directory=frontend_build_path, html=True), name="frontend")
+else:
     import logging
     logging.warning(f"Frontend build directory not found at {frontend_build_path}")
 
-@app.middleware("http")
-async def _autoforge_serve_frontend_root(request, call_next):
-    if request.method == "GET" and (request.url.path == "/" or request.url.path == ""):
-        index_file = os.path.join(frontend_build_path, "index.html")
-        if os.path.exists(index_file):
-            return _AutoForgeFileResponse(index_file)
-    return await call_next(request)
+# Middleware to serve index.html for SPA root path
+from fastapi.responses import FileResponse
+from fastapi.requests import Request
+from fastapi.middleware.base import BaseHTTPMiddleware
 
-app.mount("/", _AutoForgeStaticFiles(directory=frontend_build_path, html=True), name="frontend")
+class SPAStaticFilesMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "GET" and (request.url.path == "/" or request.url.path == ""):
+            index_path = os.path.join(frontend_build_path, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+        response = await call_next(request)
+        return response
+
+app.add_middleware(SPAStaticFilesMiddleware)
