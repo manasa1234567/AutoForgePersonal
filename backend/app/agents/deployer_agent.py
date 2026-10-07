@@ -56,7 +56,13 @@ class DeployerAgent:
 
         runtime = build.proof.runtime_status if build.proof else "Not run"
         if runtime.lower().startswith("passed"):
-            checks["isolated_runtime_validation"] = runtime
+            if "source checks" in runtime.lower() and "not performed" in runtime.lower():
+                checks["isolated_source_validation"] = runtime
+                checks["image_build_and_startup"] = (
+                    "Pending: the release workflow must compile the root Dockerfile and verify HTTP startup before Azure deployment."
+                )
+            else:
+                checks["isolated_runtime_validation"] = runtime
         else:
             checks["isolated_runtime_validation"] = runtime
             blockers.append("Isolated build and test validation has not passed.")

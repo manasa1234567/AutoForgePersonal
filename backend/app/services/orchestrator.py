@@ -240,10 +240,32 @@ class Orchestrator:
     async def start(self, build_id: str) -> BuildState:
         build = self.get(build_id)
 
-        if build.status not in {"Draft", "Refined"}:
+        retry_safety = (
+            build.status == "Failed" and build.progress == 0
+            and build.proof is None and build.blueprint is None
+            and (build.error or "").startswith("Azure Prompt Shields check failed")
+            and any(marker in (build.error or "") for marker in (
+                "HTTP 408", "HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504",
+                "ReadTimeout", "ConnectTimeout", "ReadError", "ConnectError",
+            ))
+        )
+        if build.status not in {"Draft", "Refined"} and not retry_safety:
             return build
 
-        await self._job_dispatcher.enqueue(build_id)
+        # Persist before queuing so repeated requests do not enqueue the same
+        # analysis while the background worker has not started yet.
+        build.status = "Running"
+        build.stage = "Understand"
+        build.error = None
+        if retry_safety:
+            self._add_event(build, "Retry", "Retrying initial safety analysis on the existing build", "User")
+        self._build_repository.save(build)
+        try:
+            await self._job_dispatcher.enqueue(build_id)
+        except Exception as exc:
+            self._fail(build, str(exc))
+            self._build_repository.save(build)
+            raise
 
         return build
 
@@ -330,7 +352,10 @@ class Orchestrator:
             )
 
         safety_result = await self._azure.content_safety_check(
-            build.source_text
+            build.source_text,
+            # Direct requirements use the user-prompt detector. Uploaded and
+            # external material must retain indirect/document attack scanning.
+            input_kind="user_prompt" if build.source_type in {"usecase", "requirement"} and not build.files else "document",
         )
 
         if bool(safety_result["blocked"]):

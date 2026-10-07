@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 
 import httpx
 
@@ -14,10 +15,10 @@ class AzureAdapters:
     boundary prevents Azure-specific code from leaking into orchestration.
     """
 
-    async def content_safety_check(self, text: str) -> dict[str, bool | str]:
+    async def content_safety_check(self, text: str, *, input_kind: str = "document") -> dict[str, bool | str]:
         endpoint = os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", "").rstrip("/")
         if endpoint:
-            return await self._prompt_shields_check(endpoint, text)
+            return await self._prompt_shields_check(endpoint, text, input_kind=input_kind)
 
         cloud_model_configured = any(
             os.getenv(name)
@@ -43,7 +44,9 @@ class AzureAdapters:
             "reason": "Prompt injection marker detected" if blocked else "Input accepted",
         }
 
-    async def _prompt_shields_check(self, endpoint: str, text: str) -> dict[str, bool | str]:
+    async def _prompt_shields_check(self, endpoint: str, text: str, *, input_kind: str = "document") -> dict[str, bool | str]:
+        if input_kind not in {"user_prompt", "document"}:
+            raise ValueError("Unsupported safety input kind")
         try:
             from azure.identity.aio import DefaultAzureCredential, ManagedIdentityCredential
         except ImportError as exc:
@@ -67,15 +70,24 @@ class AzureAdapters:
                         f"{endpoint}/contentsafety/text:shieldPrompt",
                         params={"api-version": os.getenv("AZURE_PROMPT_SHIELDS_API_VERSION", "2024-09-01")},
                         headers=headers,
-                        json={
+                        json={"userPrompt": chunk, "documents": []} if input_kind == "user_prompt" else {
                             "userPrompt": "Extract requirements from the supplied engineering input.",
                             "documents": [chunk],
                         },
                     )
                     response.raise_for_status()
                     result = response.json()
-                    prompt_attack = bool(result.get("userPromptAnalysis", {}).get("attackDetected"))
-                    document_attacks = result.get("documentsAnalysis", [])
+                    prompt_result = result.get("userPromptAnalysis") if isinstance(result, dict) else None
+                    document_attacks = result.get("documentsAnalysis") if isinstance(result, dict) else None
+                    if (not isinstance(prompt_result, dict)
+                            or not isinstance(prompt_result.get("attackDetected"), bool)
+                            or (input_kind == "document" and (
+                                not isinstance(document_attacks, list) or len(document_attacks) != 1
+                                or not isinstance(document_attacks[0], dict)
+                                or not isinstance(document_attacks[0].get("attackDetected"), bool)))):
+                        raise RuntimeError("Incomplete safety analysis response")
+                    prompt_attack = prompt_result["attackDetected"]
+                    document_attacks = document_attacks or []
                     document_attack = any(
                         isinstance(item, dict) and bool(item.get("attackDetected"))
                         for item in document_attacks
@@ -92,7 +104,12 @@ class AzureAdapters:
                 error_code = exc.response.headers.get("x-ms-error-code")
                 diagnostic = f"HTTP {status}"
                 if error_code:
-                    diagnostic += f", Azure error code {error_code}"
+                    if re.fullmatch(r"[\w.-]{1,80}", error_code):
+                        diagnostic += f", Azure error code {error_code}"
+                request_id = exc.response.headers.get("apim-request-id") or exc.response.headers.get("x-ms-request-id")
+                if request_id and re.fullmatch(r"[\w.-]{1,100}", request_id):
+                    diagnostic += f", request ID {request_id}"
+                diagnostic += f", {exc.response.extensions.get('autoforge_attempts', 1)} attempt(s), mode {input_kind}"
                 raise RuntimeError(
                     f"Azure Prompt Shields check failed ({diagnostic}); analysis stopped"
                 ) from exc
@@ -107,6 +124,7 @@ class AzureAdapters:
             response = None
             try:
                 response = await client.post(url, **kwargs)
+                response.extensions["autoforge_attempts"] = attempt + 1
                 response.raise_for_status()
                 return response
             except httpx.HTTPStatusError as exc:

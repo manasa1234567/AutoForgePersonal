@@ -223,6 +223,34 @@ export class BuildComponent implements OnInit {
 
   }
 
+  get canRetryAnalysis(): boolean {
+    const build = this.build;
+    return !!build && build.status === 'Failed' && build.progress === 0 && !build.proof && !build.blueprint
+      && !!build.error?.startsWith('Azure Prompt Shields check failed')
+      && /HTTP (408|429|500|502|503|504)|ReadTimeout|ConnectTimeout|ReadError|ConnectError/.test(build.error);
+  }
+
+  retryAnalysis(): void {
+    if (!this.build || !this.canRetryAnalysis) return;
+    this.loadError = null;
+    // Disable duplicate clicks while the request is in flight.
+    const previous = this.build;
+    this.build = { ...previous, status: 'Running' };
+    this.cdr.markForCheck();
+    this.api.startBuild(previous.id).subscribe({
+      next: build => {
+        this.build = build;
+        if (build.status === 'Running') this.watchApprovalProgress(build.id);
+        this.cdr.markForCheck();
+      },
+      error: error => {
+        this.build = previous;
+        this.loadError = this.describeError(error, 'Unable to retry analysis.');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
 
 
   get stageTitle(): string {

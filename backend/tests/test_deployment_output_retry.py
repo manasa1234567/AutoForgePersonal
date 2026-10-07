@@ -89,6 +89,22 @@ class OutputRetry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Can't resolve './App'", build.error)
         self.assertTrue(build.deployment_repair_review["blockers"])
         self.assertEqual(build.proof.artifacts, {"app.py": "original"})
+        self.assertEqual(store._agent_service.run_coder_agent.await_count, 3)
+
+    async def test_unchanged_candidate_can_be_corrected_within_shared_budget(self):
+        build, store, callback = self.fixture()
+        store._agent_service.run_coder_agent.side_effect = [
+            CoderResult(files={"app.py": "original"}, mode="foundry-agent"),
+            CoderResult(files={"app.py": "corrected"}, mode="foundry-agent"),
+        ]
+        with patch("app.services.deployment_repair.GitHubPublisher.publish", new_callable=AsyncMock,
+                   return_value={"commit_sha": "b" * 40}) as publish:
+            await repair_deployment(store, build.id, callback)
+        publish.assert_awaited_once()
+        self.assertEqual(build.deployment_repair_attempts, 2)
+        context = store._agent_service.run_coder_agent.call_args_list[1].kwargs
+        self.assertTrue(any('unchanged files' in finding['issue'] for finding in context['repair_findings']))
+        self.assertIn('ERESOLVE', context['repair_findings'][0]['issue'])
 
     def fixture(self):
         build = NS(id="example", title="Example", blueprint=NS(security=[], deployment="ACA", identity="OIDC"),
