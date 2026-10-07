@@ -309,6 +309,27 @@ class Orchestrator:
             self._approval_tasks.pop(key, None) if self._approval_tasks.get(key) is completed else None)
         return build
 
+    async def retry_review(self, build_id: str) -> BuildState:
+        build = self.get(build_id)
+        if build.status == "Running":
+            return build
+        approved = any(event.stage == "Approval" and event.metadata.get("gate") == "artifacts" for event in build.audit)
+        if (build.status not in {"Blocked", "Failed"} or build.progress != 72
+                or build.blueprint is None or not build.proof or not build.proof.artifacts
+                or build.proof.critic_mode != "foundry-review-evidence-invalid" or not approved):
+            raise ValueError("Only an approved artifact review blocked by invalid reviewer evidence can be retried.")
+        build.status = "Running"
+        build.stage = "Prove"
+        build.error = None
+        self._add_event(build, "Retry", "Retrying Critic review on the existing approved artifacts", "User")
+        self._set_agent(build, "Critic Agent", "Running", "Revalidating review evidence against the approved source")
+        self._build_repository.save(build)
+        task = asyncio.create_task(self._complete_approval(build_id, "artifacts"))
+        self._approval_tasks[build_id] = task
+        task.add_done_callback(lambda completed, key=build_id:
+            self._approval_tasks.pop(key, None) if self._approval_tasks.get(key) is completed else None)
+        return build
+
     async def _understand(self, build: BuildState) -> None:
         build.status = "Running"
         build.stage = "Understand"
@@ -691,8 +712,11 @@ class Orchestrator:
         repair_limit = 2
 
         for attempt in range(1, repair_limit + 1):
+            if result.mode == "foundry-review-evidence-invalid":
+                # Reviewer output needs correction, not arbitrary source edits.
+                break
             static_checks_failed = any(
-                value == "Failed"
+                value.lower().startswith("failed")
                 for value in result.checks.values()
             )
             critical_findings = any(
@@ -867,7 +891,7 @@ class Orchestrator:
             .lower()
             .startswith("passed")
             or critical_findings
-            or any(value == "Failed" for value in result.checks.values())
+            or any(value.lower().startswith("failed") for value in result.checks.values())
         )
 
         self._set_agent(
@@ -880,7 +904,7 @@ class Orchestrator:
 
         if runtime_pending:
             waiting_reason = (
-                "Awaiting isolated runtime validation"
+                "Awaiting substantiated Critic review" if result.mode == "foundry-review-evidence-invalid" else "Awaiting isolated runtime validation"
                 if result.runtime_status
                 .lower()
                 .startswith("not run")
@@ -927,8 +951,11 @@ class Orchestrator:
             build.status = "Blocked"
             build.progress = 72
 
-            failed_checks = [name for name, value in result.checks.items() if value == "Failed"]
-            if failed_checks:
+            failed_checks = [name for name, value in result.checks.items() if value.lower().startswith("failed")]
+            if result.mode == "foundry-review-evidence-invalid":
+                details = result.checks.get("foundry_review_evidence_issues", "")
+                build.error = "Critic review could not substantiate its findings. Retry source review on these approved files. " + details
+            elif failed_checks:
                 details = " ".join(
                     f"{finding.file or 'Project'}: {finding.issue}"
                     for finding in result.findings[:3]

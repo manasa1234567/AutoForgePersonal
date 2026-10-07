@@ -58,6 +58,10 @@ export class ApiService {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/retry-forge`, {});
   }
 
+  retryReview(buildId: string): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/retry-review`, {});
+  }
+
   runSecurityReview(buildId: string): Observable<BuildState> {
     return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/security-review`, {});
   }

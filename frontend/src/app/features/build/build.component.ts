@@ -236,6 +236,31 @@ export class BuildComponent implements OnInit {
       && Object.keys(build.generationFailure?.artifacts ?? {}).length > 0;
   }
 
+  get canRetryReview(): boolean {
+    return !!this.build && ['Blocked', 'Failed'].includes(this.build.status) && this.build.progress === 72
+      && this.build.proof?.criticMode === 'foundry-review-evidence-invalid';
+  }
+
+  retryReview(): void {
+    if (!this.build || !this.canRetryReview) return;
+    const previous = this.build;
+    this.loadError = null;
+    this.build = { ...previous, status: 'Running' };
+    this.cdr.markForCheck();
+    this.api.retryReview(previous.id).subscribe({
+      next: build => {
+        this.build = build;
+        if (build.status === 'Running') this.watchApprovalProgress(build.id);
+        this.cdr.markForCheck();
+      },
+      error: error => {
+        this.build = previous;
+        this.loadError = this.describeError(error, 'Unable to retry source review.');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   retryForge(): void {
     if (!this.build || !this.canRetryForge) return;
     const previous = this.build;

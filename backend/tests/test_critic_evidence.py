@@ -35,6 +35,24 @@ class CriticEvidence(unittest.TestCase):
         data = {'findings': [{'severity': 'Critical', 'file': 'app.py', 'evidence': source}]}
         self.assertEqual(CriticAgent._review_evidence_issues(data, {'app.py': source}), [])
 
+    def test_fences_relative_paths_and_uniform_indent_do_not_invalidate_real_source(self):
+        source = 'def run():\n    if enabled:\n        os.system(command)\n'
+        data = {'findings': [{'severity': 'Critical', 'file': '.\\app\\main.py',
+                             'evidence': '```python\nif enabled:\n    os.system(command)\n```'}]}
+        self.assertEqual(CriticAgent._review_evidence_issues(data, {'app/main.py': source}), [])
+        self.assertEqual(data['findings'][0]['file'], 'app/main.py')
+        self.assertIn('    if enabled:\n        os.system(command)', data['findings'][0]['evidence'])
+
+    def test_normalization_does_not_change_string_literals_or_guard_indentation(self):
+        source = 'if enabled:\n    query = "SELECT * FROM users"\n'
+        self.assertIsNone(CriticAgent._matching_excerpt('query = "SELECT*FROM users"', source))
+        self.assertIsNone(CriticAgent._matching_excerpt('if enabled:\nquery = "SELECT * FROM users"', source))
+
+    def test_negative_coverage_claim_requires_actual_missing_check(self):
+        data = {'findings': [{'severity': 'High', 'file': None, 'check': 'test_files', 'evidence': 'test_files: Missing'}]}
+        self.assertEqual(CriticAgent._review_evidence_issues(data, {}, {'test_files': 'Missing'}), [])
+        self.assertTrue(CriticAgent._review_evidence_issues(data, {}, {'test_files': 'Present'}))
+
     def test_invalid_or_empty_review_schema(self):
         self.assertTrue(CriticAgent._review_evidence_issues({}, {}))
         self.assertEqual(CriticAgent._review_evidence_issues({'findings': []}, {}), [])

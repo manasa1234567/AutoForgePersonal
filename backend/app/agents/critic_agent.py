@@ -4,6 +4,7 @@ import ast
 import json
 import os
 import re
+import textwrap
 from dataclasses import dataclass
 from typing import Any
 
@@ -164,19 +165,20 @@ class CriticAgent:
         # ---------------------------------------------------------
 
         if any(value == "Failed" or value.startswith("Failed:") for value in result.checks.values()):
+            reviewer_failed = result.checks.get("foundry_source_review", "").startswith("Failed:")
             return CriticResult(
                 summary=(
                     result.summary
-                    + " Runtime execution was withheld because "
-                    "a static safety check failed."
+                    + (" Runtime execution is waiting for a substantiated Critic review."
+                       if reviewer_failed else " Runtime execution was withheld because a static safety check failed.")
                 ),
                 findings=result.findings,
                 requirement_coverage=result.requirement_coverage,
                 test_plan=result.test_plan,
                 checks=result.checks,
                 runtime_status=(
-                    "Not run: static safety checks must pass "
-                    "before sandbox execution"
+                    "Not run: Critic review must be substantiated before sandbox execution"
+                    if reviewer_failed else "Not run: static safety checks must pass before sandbox execution"
                 ),
                 mode=result.mode,
             )
@@ -788,7 +790,7 @@ array of:
   severity: Critical|High|Medium|Low,
   file: string|null,
   issue: string,
-  recommendation: string
+  recommendation: string,
   evidence: string (exact source excerpt from the named submitted file)
 }
 
@@ -806,7 +808,10 @@ from the supplied artifacts. Every
 High or Critical source finding must quote an exact source excerpt from that
 file in evidence. Explain the actual unsafe operation and its input path;
 "may lead to injection" or absent generic sanitization alone does not establish
-a Critical vulnerability. Respect validation already provided by the framework
+a Critical vulnerability. Use raw source excerpts without line numbers or
+ellipses. For project-wide missing test coverage, file may be null with
+check="test_files" and evidence="test_files: Missing" only when that static
+check is actually Missing. Respect validation already provided by the framework
 and schemas. Do not invent paths, modules or database code. If no concrete
 defect is supported by the submitted files, return an empty findings array.
 
@@ -864,7 +869,7 @@ A missing runtime sandbox is not proof of success.
                         mode="local-static-review+foundry-response-invalid",
                     )
 
-            evidence_errors = self._review_evidence_issues(data, artifacts)
+            evidence_errors = self._review_evidence_issues(data, artifacts, checks)
             if evidence_errors:
                 response = await agent.run(json.dumps({
                     "reviewCorrection": "Validate your findings against the supplied artifacts. Remove unsupported claims, or name the actual file and quote exact source evidence. Return the complete review JSON; do not invent a vulnerability.",
@@ -875,7 +880,7 @@ A missing runtime sandbox is not proof of success.
                 }, ensure_ascii=False))
                 try:
                     data = SpecAgent._parse_json_response(str(response))
-                    evidence_errors = self._review_evidence_issues(data, artifacts)
+                    evidence_errors = self._review_evidence_issues(data, artifacts, checks)
                 except ValueError:
                     evidence_errors = ["Corrected review did not return valid JSON."]
                 if evidence_errors:
@@ -883,7 +888,8 @@ A missing runtime sandbox is not proof of success.
                         summary="Foundry source review could not substantiate its findings; review must be corrected before publication.",
                         findings=local_findings,
                         requirement_coverage=[], test_plan=[],
-                        checks={**checks, "foundry_source_review": "Failed: unsubstantiated review evidence"},
+                        checks={**checks, "foundry_source_review": "Failed: unsubstantiated review evidence",
+                                "foundry_review_evidence_issues": "; ".join(evidence_errors)[:1500]},
                         runtime_status="Not run: source review evidence is invalid",
                         mode="foundry-review-evidence-invalid",
                     )
@@ -930,7 +936,7 @@ A missing runtime sandbox is not proof of success.
     # =============================================================
 
     @staticmethod
-    def _review_evidence_issues(data: dict[str, Any], artifacts: dict[str, str]) -> list[str]:
+    def _review_evidence_issues(data: dict[str, Any], artifacts: dict[str, str], checks: dict[str, str] | None = None) -> list[str]:
         findings = data.get("findings")
         if not isinstance(findings, list):
             return ["findings must be an array."]
@@ -940,13 +946,49 @@ A missing runtime sandbox is not proof of success.
                 issues.append("A finding is not an object.")
                 continue
             path = finding.get("file")
+            if isinstance(path, str):
+                path = path.strip().replace("\\", "/")
+                while path.startswith("./"):
+                    path = path[2:]
+                finding["file"] = path
+            # Absence can be proven by a deterministic check; it cannot quote
+            # a nonexistent source file. Source vulnerability claims still
+            # need their actual path and matching code.
+            if (not path and finding.get("check") == "test_files" and (checks or {}).get("test_files") == "Missing"
+                    and finding.get("evidence") == "test_files: Missing"):
+                finding["issue"] = "No test source files were generated for the approved acceptance criteria."
+                continue
             if path and (not isinstance(path, str) or path not in artifacts):
                 issues.append(f"Unknown artifact path: {str(path)[:200]}")
             elif finding.get("severity") in {"High", "Critical"}:
                 evidence = finding.get("evidence")
-                if not path or not isinstance(evidence, str) or not evidence.strip() or evidence not in artifacts[path]:
+                matched = CriticAgent._matching_excerpt(evidence, artifacts[path]) if path else None
+                if not matched:
                     issues.append(f"Blocking finding lacks matching source evidence: {str(path)[:200]}")
+                else:
+                    finding["evidence"] = matched
         return issues[:40]
+
+    @staticmethod
+    def _matching_excerpt(evidence: Any, source: str) -> str | None:
+        if not isinstance(evidence, str) or not evidence.strip():
+            return None
+        excerpt = evidence.strip()
+        fenced = re.fullmatch(r"```[\w+-]*\s*\n(.*?)\n```", excerpt, re.S)
+        if fenced:
+            excerpt = fenced[1]
+        excerpt = excerpt.replace("\r\n", "\n")
+        normalized = source.replace("\r\n", "\n")
+        if excerpt in normalized:
+            return excerpt
+        lines = normalized.splitlines()
+        size = len(excerpt.splitlines())
+        target = textwrap.dedent(excerpt).strip()
+        for start in range(len(lines) - size + 1):
+            candidate = "\n".join(lines[start:start + size])
+            if textwrap.dedent(candidate).strip() == target:
+                return candidate
+        return None
 
     @staticmethod
     def _normalize_findings(

@@ -56,7 +56,10 @@
         @if (currentBuild.status === 'Running' && currentBuild.stage !== 'Understand') {
           <div class="analysis-loading approval-progress" role="status" aria-live="polite">
             <div class="spinner" aria-hidden="true"></div>
-            @if (currentBuild.deploymentRepairing) {
+            @if (currentBuild.stage === 'Prove' && currentBuild.proof?.criticMode === 'foundry-review-evidence-invalid') {
+              <h3>Retrying source review</h3>
+              <p>The Critic is checking the existing approved files again. This page will update when the review finishes.</p>
+            } @else if (currentBuild.deploymentRepairing) {
               <h3>Repairing and rebuilding the generated app</h3>
               <p>Deployment repair {{ currentBuild.deploymentRepairAttempts }} of 3 is being reviewed and rebuilt. This page will update when deployment succeeds or fails.</p>
             } @else if (currentBuild.deploymentStatus === 'running') {
@@ -75,9 +78,9 @@
         </div>
 
         @if (previewUrl; as uiPreview) {
-          <div class="stage-footer">
-            <a class="secondary-button" [href]="uiPreview" target="_blank" rel="noopener">Preview UI ↗</a>
-            <span>Interactive demo with sample data. The ZIP includes an offline preview file.</span>
+          <div class="preview-toolbar">
+            <a class="preview-link" [href]="uiPreview" target="_blank" rel="noopener">Preview UI ↗</a>
+            <p>Interactive demo with sample data. The ZIP includes an offline preview file.</p>
           </div>
         }
 
@@ -178,6 +181,9 @@
                   <div class="section-title"><div><span>CRITIC AGENT</span><h3>Source review</h3></div><b>{{ proof.criticMode }}</b></div>
                   <p>{{ proof.criticSummary }}</p>
                   <div class="runtime-status"><strong>Runtime validation</strong><span>{{ proof.runtimeStatus }}</span></div>
+                  @if (canRetryReview) {
+                    <div class="review-retry"><p>The reviewer could not verify its claims against these files. Retry the review; source files and approvals are preserved.</p><button class="primary-button" type="button" (click)="retryReview()">Retry source review</button></div>
+                  }
                 </div>
                 <div class="section-title"><div><span>STATIC CHECKS</span><h3>Review results</h3></div></div>
                 <div class="analysis-grid">@for (check of (proof.checks | keyvalue); track check.key) { <div><strong>{{ check.key }}</strong><span>{{ check.value }}</span></div> }</div>
