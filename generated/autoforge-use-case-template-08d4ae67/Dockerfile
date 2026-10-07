@@ -9,10 +9,10 @@ RUN npm run build
 
 # Build stage for backend
 FROM python:3.11-slim as backend-build
-WORKDIR /app/backend
-COPY app/ ./app/
+WORKDIR /app
+COPY app ./app
 COPY pyproject.toml ./
-RUN python -m pip install --upgrade pip poetry &&      poetry config virtualenvs.create false &&      rm -f poetry.lock && poetry lock --no-interaction && poetry install --no-root --no-interaction --no-ansi
+RUN python -m pip install --upgrade pip poetry && poetry config virtualenvs.create false && rm -f poetry.lock && poetry lock --no-interaction && poetry install --no-root --no-interaction --no-ansi
 
 # Runtime stage
 FROM python:3.11-slim
