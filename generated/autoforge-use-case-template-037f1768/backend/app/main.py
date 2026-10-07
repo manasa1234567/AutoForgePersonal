@@ -34,9 +34,21 @@ async def root():
 # Serve the packaged UI at / while preserving API routes and static assets.
 from fastapi.responses import FileResponse as _AutoForgeFileResponse
 from fastapi.staticfiles import StaticFiles as _AutoForgeStaticFiles
+import os
+
+frontend_build_path = "/app/frontend/build"
+
+if not os.path.exists(frontend_build_path):
+    # If frontend build directory does not exist, log or handle gracefully
+    import logging
+    logging.warning(f"Frontend build directory not found at {frontend_build_path}")
+
 @app.middleware("http")
 async def _autoforge_serve_frontend_root(request, call_next):
-    if request.method == "GET" and request.url.path == "/":
-        return _AutoForgeFileResponse("/app/frontend/build/index.html")
+    if request.method == "GET" and (request.url.path == "/" or request.url.path == ""):
+        index_file = os.path.join(frontend_build_path, "index.html")
+        if os.path.exists(index_file):
+            return _AutoForgeFileResponse(index_file)
     return await call_next(request)
-app.mount("/", _AutoForgeStaticFiles(directory="/app/frontend/build", html=True), name="frontend")
+
+app.mount("/", _AutoForgeStaticFiles(directory=frontend_build_path, html=True), name="frontend")
