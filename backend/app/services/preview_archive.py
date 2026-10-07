@@ -80,7 +80,7 @@ async def preview_zip(build, artifacts, previews, heartbeat=5):
                 try:
                     body = await pending
                 except Exception:
-                    body = wrap_preview(build.title, '<!doctype html><html><body><h1>Preview unavailable</h1><p>The original project files are included. Open Preview UI on the build page and retry preview generation.</p></body></html>')
+                    body = wrap_preview(build.title, '<!doctype html><html><body><h1>Preview unavailable</h1><p>The original project files are included. Download the ZIP again later to retry preview generation.</p></body></html>')
                 member.write(body.encode('utf-8'))
             yield buffer.drain()
             zipped.writestr(readme_name, f'''# Offline UI preview
@@ -94,9 +94,9 @@ sample data held in memory. Changes reset when the page reloads. This is not
 evidence that the application compiled, passed tests or deployed successfully.
 
 Original application and test files remain included for running the real app.
-If the preview is unavailable, use Preview UI on the build page to regenerate
-it, then download the ZIP again. Source downloads remain available even if
-preview generation fails.
+If the preview is unavailable, download the ZIP again later to retry
+generation. Source downloads remain available even if preview generation
+fails.
 ''')
             yield buffer.drain()
         yield buffer.drain()

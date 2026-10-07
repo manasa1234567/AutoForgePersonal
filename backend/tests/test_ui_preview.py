@@ -160,28 +160,24 @@ class PreviewExport(unittest.IsolatedAsyncioTestCase):
 
 
 class PreviewRoutes(unittest.TestCase):
-    def test_open_preview_status_and_zip_routes_share_cached_content(self):
+    def test_on_page_preview_routes_are_removed_but_zip_preview_remains(self):
         from app.routers import builds
         build = fixture()
+        app = FastAPI()
+        app.include_router(builds.router)
         repository = InMemoryBuildRepository()
         repository.save(build)
         service = PreviewService(repository)
         repository.save_preview(build.id, preview_digest(build, build.proof.artifacts),
                                 {'status': 'ready', 'html': wrap_preview(build.title, BODY)})
-        app = FastAPI()
-        app.include_router(builds.router)
         with patch.object(builds, 'store', SimpleNamespace(get=repository.get)), \
              patch.object(builds, 'previews', service), TestClient(app) as client:
-            page = client.get('/api/builds/example/preview')
-            self.assertEqual(page.status_code, 200)
-            self.assertIn('Preparing UI preview', page.text)
-            self.assertIn("connect-src 'self'", page.headers['content-security-policy'])
-            self.assertEqual(client.get('/api/builds/example/preview/status').json(), {'status': 'ready'})
-            body = client.get('/api/builds/example/preview/content')
-            self.assertEqual(body.status_code, 200)
-            self.assertIn("connect-src 'none'", body.headers['content-security-policy'])
+            self.assertEqual(client.get('/api/builds/example/preview').status_code, 404)
+            self.assertEqual(client.get('/api/builds/example/preview/status').status_code, 404)
+            self.assertEqual(client.get('/api/builds/example/preview/content').status_code, 404)
             result = client.get('/api/builds/example/artifacts.zip')
             self.assertEqual(result.status_code, 200)
             with zipfile.ZipFile(BytesIO(result.content)) as archive:
-                self.assertEqual(archive.read('preview.html').decode(), body.text)
+                self.assertIn('preview.html', archive.namelist())
+                self.assertIn('Offline UI preview', archive.read('preview.html').decode())
             self.assertEqual(client.get('/api/builds/missing/preview').status_code, 404)

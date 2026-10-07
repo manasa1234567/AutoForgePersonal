@@ -42,8 +42,12 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RG }}
       ACR_LOGIN_SERVER: ${{ vars.ACR_NAME }}.azurecr.io
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_RESOURCE_GROUP: ${{ vars.ACR_RESOURCE_GROUP || vars.AZURE_RG }}
       ACA_ENVIRONMENT_NAME: ${{ vars.ACA_ENVIRONMENT_NAME || 'aegis-env' }}
       ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || 'aegis-rg' }}
+      ACA_REGISTRY_IDENTITY: ${{ vars.FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID }}
+      AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED: ${{ vars.AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED || 'false' }}
       AUTOFORGE_GITHUB_OWNER: ${{ vars.AUTOFORGE_GITHUB_OWNER || 'manasa1234567' }}
       AUTOFORGE_GITHUB_REPOSITORY: ${{ vars.AUTOFORGE_GITHUB_REPOSITORY || 'AutoForgePersonal' }}
       AUTOFORGE_SANDBOX_ENABLED: ${{ vars.AUTOFORGE_SANDBOX_ENABLED || 'false' }}
@@ -80,6 +84,12 @@ jobs:
           if [[ "$AUTOFORGE_SANDBOX_ENABLED" == "true" && -z "$AUTOFORGE_SANDBOX_ENDPOINT" ]]; then
             echo "Set AUTOFORGE_SANDBOX_ENDPOINT when AUTOFORGE_SANDBOX_ENABLED=true."
             exit 1
+          fi
+          if [[ "$AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED" == "true" ]]; then
+            if [[ -z "$AZURE_SUBSCRIPTION_ID" || -z "$ACA_ENVIRONMENT_NAME" || -z "$ACA_RESOURCE_GROUP" || -z "$ACR_NAME" || -z "$FOUNDRY_RUNTIME_IDENTITY_RESOURCE_ID" || -z "$FOUNDRY_RUNTIME_CLIENT_ID" ]]; then
+              echo "Direct Azure deployment requires the subscription, ACR, ACA environment/resource group, and runtime managed identity settings."
+              exit 1
+            fi
           fi
           if [[ "$AUTOFORGE_PERSISTENCE" == "azure" ]]; then
             if [[ -z "$AUTOFORGE_COSMOS_ENDPOINT" || -z "$AUTOFORGE_BLOB_ACCOUNT_URL" ]]; then
@@ -176,8 +186,12 @@ jobs:
               "AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" \
               "AZURE_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" \
               "ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER" \
+              "ACR_NAME=$ACR_NAME" \
+              "ACR_RESOURCE_GROUP=$ACR_RESOURCE_GROUP" \
               "ACA_ENVIRONMENT_NAME=$ACA_ENVIRONMENT_NAME" \
               "ACA_RESOURCE_GROUP=$ACA_RESOURCE_GROUP" \
+              "ACA_REGISTRY_IDENTITY=$ACA_REGISTRY_IDENTITY" \
+              "AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED=$AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED" \
               "AUTOFORGE_GITHUB_OWNER=$AUTOFORGE_GITHUB_OWNER" \
               "AUTOFORGE_GITHUB_REPOSITORY=$AUTOFORGE_GITHUB_REPOSITORY" \
               "AUTOFORGE_GITHUB_PUBLISH_ENABLED=$AUTOFORGE_GITHUB_PUBLISH_ENABLED" \

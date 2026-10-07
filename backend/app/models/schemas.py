@@ -70,6 +70,7 @@ class SpecAgentRequest(ApiModel):
 
 class ApprovalRequest(ApiModel):
     gate: ApprovalGate
+    deployment_strategy: Literal["github", "azure_direct"] = "github"
 
 
 class RefineRequest(ApiModel):
@@ -308,6 +309,7 @@ class BuildState(ApiModel):
     repository_url: str | None = None
     deployed_url: str | None = None
     deployment_status: Literal["not_started", "running", "succeeded", "failed"] = "not_started"
+    deployment_mode: Literal["github", "azure_direct"] | None = None
     deployment_commit: str = ""
     deployment_repair_attempts: int = 0
     deployment_repairing: bool = False

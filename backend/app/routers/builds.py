@@ -4,11 +4,11 @@ import re
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, DeploymentCallback, RefineRequest
 from ..services.orchestrator import Orchestrator
-from ..services.ui_preview import PreviewService, PreviewError, preview_artifacts, preview_viewer, PREVIEW_CSP, VIEWER_CSP
+from ..services.ui_preview import PreviewService, preview_artifacts
 from ..services.preview_archive import preview_zip, safe_artifacts
 
 router = APIRouter(prefix="/api/builds", tags=["builds"])
@@ -25,36 +25,6 @@ def _preview_snapshot(build_id):
     if not artifacts:
         raise HTTPException(status_code=404, detail='Generated source files are not available yet')
     return build, artifacts
-
-
-@router.get('/{build_id}/preview', response_class=HTMLResponse)
-async def open_preview(build_id: str):
-    build, _ = _preview_snapshot(build_id)
-    return HTMLResponse(preview_viewer(build), headers={'Content-Security-Policy': VIEWER_CSP,
-                        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
-
-
-@router.post('/{build_id}/preview/start', status_code=202)
-async def start_preview(build_id: str, retry: bool = False):
-    build, artifacts = _preview_snapshot(build_id)
-    return await previews.start(build, artifacts, retry=retry)
-
-
-@router.get('/{build_id}/preview/status')
-async def preview_status(build_id: str):
-    build, artifacts = _preview_snapshot(build_id)
-    return await previews.status(build, artifacts)
-
-
-@router.get('/{build_id}/preview/content', response_class=HTMLResponse)
-async def preview_content(build_id: str):
-    build, artifacts = _preview_snapshot(build_id)
-    try:
-        body = await previews.cached_html(build, artifacts)
-    except PreviewError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return HTMLResponse(body, headers={'Content-Security-Policy': PREVIEW_CSP,
-                        'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
 
 
 @router.post("", status_code=201)
@@ -128,7 +98,7 @@ async def download_artifacts(build_id: str):
 @router.post("/{build_id}/approve", status_code=202)
 async def approve_build(build_id: str, payload: ApprovalRequest):
     try:
-        return await store.approve(build_id, payload.gate)
+        return await store.approve(build_id, payload.gate, payload.deployment_strategy)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

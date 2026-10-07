@@ -42,8 +42,8 @@ export class ApiService {
     return this.http.get<BuildState>(`${this.baseUrl}/builds/${buildId}`).pipe(timeout({ first: 30_000 }));
   }
 
-  approve(buildId: string, gate: Exclude<ApprovalGate, null>): Observable<BuildState> {
-    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/approve`, { gate });
+  approve(buildId: string, gate: Exclude<ApprovalGate, null>, deploymentStrategy: 'github' | 'azure_direct' = 'github'): Observable<BuildState> {
+    return this.http.post<BuildState>(`${this.baseUrl}/builds/${buildId}/approve`, { gate, deploymentStrategy });
   }
 
   updateBlueprint(buildId: string, blueprint: BlueprintUpdate): Observable<BuildState> {
@@ -86,6 +86,7 @@ export interface DeploymentSetupStatus {
     container_apps_environment: boolean;
     managed_identity: boolean;
     deployment_enabled: boolean;
+    direct_deployment_enabled: boolean;
   };
   validation: { isolated_validation: boolean };
   branchPattern: string;

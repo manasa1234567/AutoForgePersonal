@@ -1637,6 +1637,7 @@ class Orchestrator:
         self,
         build_id: str,
         gate: str,
+        deployment_strategy: str = "github",
     ) -> BuildState:
         build = self.get(build_id)
 
@@ -1644,6 +1645,19 @@ class Orchestrator:
             raise ValueError(
                 f"Approval gate '{gate}' is not active"
             )
+
+        if gate == "release":
+            if deployment_strategy == "azure_direct":
+                from .azure_direct_deployer import AzureDirectDeployer
+                if not AzureDirectDeployer.configured():
+                    raise ValueError(
+                        "Direct Azure deployment is not enabled or configured. Configure the backend managed identity, "
+                        "ACR_LOGIN_SERVER, ACA_REGISTRY_IDENTITY, ACA_ENVIRONMENT_NAME, ACA_RESOURCE_GROUP, "
+                        "AZURE_SUBSCRIPTION_ID, and AUTOFORGE_AZURE_DIRECT_DEPLOYMENT_ENABLED=true."
+                    )
+            elif deployment_strategy != "github":
+                raise ValueError("Choose either GitHub Actions or direct Azure deployment.")
+            build.deployment_mode = deployment_strategy
 
         if (
             gate == "skill"
@@ -1705,6 +1719,7 @@ class Orchestrator:
             self._complete_approval(
                 build_id,
                 gate,
+                deployment_strategy,
             )
         )
 
@@ -1721,6 +1736,7 @@ class Orchestrator:
         self,
         build_id: str,
         gate: str,
+        deployment_strategy: str = "github",
     ) -> None:
         build = self.get(build_id)
 
@@ -1811,12 +1827,72 @@ class Orchestrator:
 
         elif gate == "release":
             try:
-                await self._deploy(build)
+                if deployment_strategy == "azure_direct":
+                    await self._deploy_direct(build)
+                    # Direct deploy progress is persisted from fresh snapshots.
+                    # Reload so the common save below cannot replace the
+                    # completed result with the older approval snapshot.
+                    build = self.get(build_id)
+                else:
+                    await self._deploy(build)
 
             except Exception as exc:
+                if deployment_strategy == "azure_direct":
+                    build = self.get(build_id)
                 self._fail(build, str(exc))
+                if deployment_strategy == "azure_direct":
+                    build.deployment_status = "failed"
 
         self._build_repository.save(build)
+
+    async def _deploy_direct(self, build: BuildState) -> None:
+        from .azure_direct_deployer import AzureDirectDeployer
+
+        if build.proof is None or not build.proof.artifacts:
+            raise RuntimeError("Release stopped: no generated artifacts are available to deploy.")
+        if build.security_review is None or build.security_review.decision == "Block release":
+            raise RuntimeError("Release stopped: the Security Reviewer has not approved these artifacts.")
+        if not build.proof.runtime_status.lower().startswith("passed"):
+            raise RuntimeError("Release stopped: isolated runtime validation must pass before deployment.")
+
+        build.stage = "Release"
+        build.progress = 96
+        build.status = "Running"
+        build.deployment_status = "running"
+        build.deployment_mode = "azure_direct"
+        build.error = None
+        self._set_agent(build, "Deployer Agent", "Running", "Building the approved source in Azure and deploying it directly to Azure Container Apps")
+        self._add_event(build, "Azure Direct Deployment", "Approved source will be uploaded to Azure Container Registry; no GitHub feature branch will be created.", "Deployer Agent")
+        self._build_repository.save(build)
+
+        async def progress(stage: str, message: str) -> None:
+            current = self.get(build.id)
+            current.stage = "Release"
+            current.status = "Running"
+            current.deployment_status = "running"
+            current.progress = 97
+            self._set_agent(current, "Deployer Agent", "Running", message)
+            self._add_event(current, stage, message, "Deployer Agent")
+            self._build_repository.save(current)
+
+        deployed = await AzureDirectDeployer().deploy(build, progress)
+        current = self.get(build.id)
+        current.stage = "Release"
+        current.deployment_status = "succeeded"
+        current.deployment_mode = "azure_direct"
+        current.deployed_url = deployed.url
+        current.status = "Deployed"
+        current.progress = 100
+        current.error = None
+        self._set_agent(current, "Deployer Agent", "Ready", "Application deployed directly to Azure and its public URL passed the HTTP smoke test")
+        self._add_event(
+            current,
+            "Azure Direct Deployment",
+            "Generated application deployed directly to Azure Container Apps and passed its HTTP smoke test",
+            "Deployer Agent",
+            metadata={"url": deployed.url, "app_name": deployed.app_name, "image": deployed.image, "acr_run_id": deployed.acr_run_id},
+        )
+        self._build_repository.save(current)
 
     # ============================================================
     # BLUEPRINT

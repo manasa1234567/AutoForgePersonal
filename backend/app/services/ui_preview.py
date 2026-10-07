@@ -6,12 +6,10 @@ from html.parser import HTMLParser
 import json
 import os
 import time
-from urllib.parse import quote
 
 from ..agents.spec_agent import SpecAgent
 
 PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; frame-src 'self' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'"
-VIEWER_CSP = PREVIEW_CSP.replace("connect-src 'none'", "connect-src 'self'")
 
 
 class PreviewError(RuntimeError):
@@ -158,7 +156,7 @@ class PreviewService:
     async def cached_html(self, build, artifacts):
         value = await asyncio.to_thread(self.repository.get_preview, build.id, preview_digest(build, artifacts))
         if not value or value['status'] != 'ready':
-            raise PreviewError('Preview is not ready. Open Preview UI and wait for generation to finish.')
+            raise PreviewError('Offline preview generation has not completed for the project ZIP.')
         return value['html']
 
     async def start(self, build, artifacts, retry=False):
@@ -203,8 +201,3 @@ class PreviewService:
                 raise PreviewError(value['error'])
             await asyncio.sleep(1)
         raise PreviewError('Preview generation timed out. Retry the preview from the build page.')
-
-
-def preview_viewer(build):
-    root = '/api/builds/' + quote(build.id, safe='') + '/preview'
-    return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(build.title)} — UI preview</title><style>body{{margin:0;font:16px system-ui;background:#f4f7fb}}#loading{{padding:32px}}iframe{{width:100%;height:100vh;border:0;display:none}}button{{padding:10px}}</style></head><body><section id="loading"><h1>Preparing UI preview</h1><p id="message">Building an offline demo from your generated source. No application deployment is required.</p><button id="retry" hidden>Retry preview</button></section><iframe id="preview" title="UI preview" sandbox="allow-scripts allow-downloads"></iframe><script>const root={json.dumps(root)};const msg=document.getElementById('message'),retry=document.getElementById('retry');async function run(force=false){{retry.hidden=true;try{{const start=await fetch(root+'/start'+(force?'?retry=true':''),{{method:'POST'}});if(!start.ok)throw new Error('Preview is unavailable.');for(let i=0;i<260;i++){{const response=await fetch(root+'/status');if(!response.ok)throw new Error('Unable to check preview status.');const state=await response.json();if(state.status==='ready'){{const frame=document.getElementById('preview');frame.src=root+'/content';frame.style.display='block';document.getElementById('loading').style.display='none';return}}if(state.status==='error')throw new Error(state.error);if(state.status==='not_started')await fetch(root+'/start',{{method:'POST'}});await new Promise(resolve=>setTimeout(resolve,1500))}}throw new Error('Preview is taking longer than expected. Retry shortly.')}}catch(error){{msg.textContent=error.message;retry.hidden=false}}}}retry.onclick=()=>run(true);run();</script></body></html>'''

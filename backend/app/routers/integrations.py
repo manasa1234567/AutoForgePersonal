@@ -4,6 +4,8 @@ import os
 
 from fastapi import APIRouter
 
+from ..services.azure_direct_deployer import AzureDirectDeployer
+
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 
@@ -29,6 +31,7 @@ async def deployment_status() -> dict[str, object]:
         "container_apps_environment": _configured("ACA_ENVIRONMENT_NAME") and _configured("ACA_RESOURCE_GROUP"),
         "managed_identity": os.getenv("AUTOFORGE_IDENTITY_MODE", "").lower() == "managed_identity",
         "deployment_enabled": os.getenv("AUTOFORGE_DEPLOYMENT_ENABLED", "false").lower() == "true",
+        "direct_deployment_enabled": AzureDirectDeployer.configured(),
         "deployment_callback_configured": _configured("AUTOFORGE_DEPLOYMENT_CALLBACK_TOKEN"),
     }
     runtime = {
@@ -36,7 +39,7 @@ async def deployment_status() -> dict[str, object]:
         and _configured("AUTOFORGE_SANDBOX_ENDPOINT"),
     }
     configured = all(value is True for value in github.values() if isinstance(value, bool)) \
-        and all(value is True for value in azure.values()) \
+        and all(value is True for name, value in azure.items() if name != "direct_deployment_enabled") \
         and all(value is True for value in runtime.values())
     return {
         "status": "configured" if configured else "setup_required",
@@ -46,5 +49,5 @@ async def deployment_status() -> dict[str, object]:
         "branchPattern": "feature/<use-case-slug>-<build-id>",
         "branchPublishingImplemented": True,
         "deploymentImplemented": True,
-        "note": "After release approval, reviewed artifacts are committed to a feature branch. GitHub Actions builds supported generated projects, deploys them to Azure Container Apps, smoke-checks the public URL, and reports the result to the build timeline.",
+        "note": "Release approval offers GitHub Actions deployment from a feature branch or direct Azure deployment. Direct Azure uses the backend managed identity to upload source to ACR Tasks, build the image, create an isolated Azure Container App, and smoke-check its public URL. The identity needs permissions for ACR source upload/task builds, Container Apps create/update, and assignment of the configured registry identity.",
     }

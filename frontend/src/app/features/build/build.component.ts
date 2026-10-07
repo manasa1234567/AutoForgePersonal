@@ -7,7 +7,7 @@ import { EMPTY, catchError, exhaustMap, interval, startWith, takeWhile } from 'r
 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-import { ApiService } from '../../core/api.service';
+import { ApiService, DeploymentSetupStatus } from '../../core/api.service';
 
 import { AgentState, ApprovalGate, BlueprintUpdate, BuildStage, BuildState } from '../../shared/models/build.models';
 
@@ -47,6 +47,7 @@ export class BuildComponent implements OnInit {
 
 
   build: BuildState | null = null;
+  deploymentSetup: DeploymentSetupStatus | null = null;
 
   loadError: string | null = null;
   statusRefreshError: string | null = null;
@@ -85,6 +86,11 @@ export class BuildComponent implements OnInit {
   ];
 
   ngOnInit(): void {
+
+  this.api.getDeploymentStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    next: (status) => { this.deploymentSetup = status; this.cdr.markForCheck(); },
+    error: () => { this.deploymentSetup = null; this.cdr.markForCheck(); },
+  });
 
   const buildId = this.route.snapshot.paramMap.get('id');
 
@@ -413,13 +419,25 @@ export class BuildComponent implements OnInit {
 
 
   approve(gate: Exclude<ApprovalGate, null>): void {
+    this.submitApproval(gate, 'github');
+  }
+
+  approveRelease(strategy: 'github' | 'azure_direct'): void {
+    this.submitApproval('release', strategy);
+  }
+
+  get directAzureDeployReady(): boolean {
+    return this.deploymentSetup?.azureContainerApps.direct_deployment_enabled === true;
+  }
+
+  private submitApproval(gate: Exclude<ApprovalGate, null>, strategy: 'github' | 'azure_direct'): void {
     if (!this.build || this.approvingGate || this.build.approvalGate !== gate) return;
 
     this.approvingGate = gate;
     this.loadError = null;
     this.cdr.markForCheck();
 
-    this.api.approve(this.build.id, gate).subscribe({
+    this.api.approve(this.build.id, gate, strategy).subscribe({
       next: (build) => {
         this.build = build;
         this.loadError = null;
@@ -467,10 +485,6 @@ export class BuildComponent implements OnInit {
     return artifacts && Object.keys(artifacts).length && this.build
       ? `/api/builds/${encodeURIComponent(this.build.id)}/artifacts.zip?rev=${this.build.audit.length}`
       : null;
-  }
-
-  get previewUrl(): string | null {
-    return this.artifactsZipUrl && this.build ? `/api/builds/${encodeURIComponent(this.build.id)}/preview` : null;
   }
 
   refine(): void {

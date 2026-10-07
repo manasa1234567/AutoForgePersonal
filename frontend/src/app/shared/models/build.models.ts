@@ -200,6 +200,7 @@ export interface BuildState {
   repositoryUrl: string | null;
   deployedUrl: string | null;
   deploymentStatus: 'not_started' | 'running' | 'succeeded' | 'failed';
+  deploymentMode: 'github' | 'azure_direct' | null;
   deploymentRepairAttempts: number;
   deploymentRepairing: boolean;
   skillProposal: SkillProposal | null;
