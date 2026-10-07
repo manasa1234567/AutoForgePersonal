@@ -1,18 +1,60 @@
-from io import BytesIO
 import hmac
 import os
 import re
-import zipfile
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from ..models.schemas import ApprovalRequest, BlueprintUpdate, BuildCreate, BuildState, DeploymentCallback, RefineRequest
 from ..services.orchestrator import Orchestrator
+from ..services.ui_preview import PreviewService, PreviewError, preview_artifacts, preview_viewer, PREVIEW_CSP, VIEWER_CSP
+from ..services.preview_archive import preview_zip, safe_artifacts
 
 router = APIRouter(prefix="/api/builds", tags=["builds"])
 store = Orchestrator()
+previews = PreviewService(store._build_repository)
+
+
+def _preview_snapshot(build_id):
+    try:
+        build = store.get(build_id).model_copy(deep=True)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail='Build not found') from exc
+    artifacts = safe_artifacts(preview_artifacts(build))
+    if not artifacts:
+        raise HTTPException(status_code=404, detail='Generated source files are not available yet')
+    return build, artifacts
+
+
+@router.get('/{build_id}/preview', response_class=HTMLResponse)
+async def open_preview(build_id: str):
+    build, _ = _preview_snapshot(build_id)
+    return HTMLResponse(preview_viewer(build), headers={'Content-Security-Policy': VIEWER_CSP,
+                        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.post('/{build_id}/preview/start', status_code=202)
+async def start_preview(build_id: str, retry: bool = False):
+    build, artifacts = _preview_snapshot(build_id)
+    return await previews.start(build, artifacts, retry=retry)
+
+
+@router.get('/{build_id}/preview/status')
+async def preview_status(build_id: str):
+    build, artifacts = _preview_snapshot(build_id)
+    return await previews.status(build, artifacts)
+
+
+@router.get('/{build_id}/preview/content', response_class=HTMLResponse)
+async def preview_content(build_id: str):
+    build, artifacts = _preview_snapshot(build_id)
+    try:
+        body = await previews.cached_html(build, artifacts)
+    except PreviewError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return HTMLResponse(body, headers={'Content-Security-Policy': PREVIEW_CSP,
+                        'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
 
 
 @router.post("", status_code=201)
@@ -64,29 +106,10 @@ async def retry_forge(build_id: str):
 
 @router.get("/{build_id}/artifacts.zip")
 async def download_artifacts(build_id: str):
-    try:
-        build = store.get(build_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Build not found") from exc
-    artifacts = build.proof.artifacts if build.proof else {}
-    if not artifacts:
-        raise HTTPException(status_code=404, detail="Generated artifacts are not available yet")
-
-    archive = BytesIO()
-    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
-        for path, content in artifacts.items():
-            normalized = path.replace("\\", "/")
-            if (
-                normalized.startswith("/")
-                or re.match(r"^[A-Za-z]:", normalized)
-                or any(part in {"", ".", ".."} for part in normalized.split("/"))
-            ):
-                continue
-            zipped.writestr(normalized, content)
-    archive.seek(0)
+    build, artifacts = _preview_snapshot(build_id)
     safe_title = re.sub(r"[^A-Za-z0-9_-]+", "-", build.title).strip("-")[:60] or "autoforge-project"
     return StreamingResponse(
-        archive,
+        preview_zip(build, artifacts, previews),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_title}-{build.id}.zip"'},
     )

@@ -72,6 +72,18 @@ class AzureBuildRepository:
             raise
         return True
 
+    def get_preview(self, build_id: str, digest: str) -> dict | None:
+        from azure.core.exceptions import ResourceNotFoundError
+        try:
+            data = self._snapshots.get_blob_client(f"{build_id}/previews/{digest}.json").download_blob().readall()
+            return json.loads(data)
+        except ResourceNotFoundError:
+            return None
+
+    def save_preview(self, build_id: str, digest: str, value: dict) -> None:
+        self._snapshots.upload_blob(name=f"{build_id}/previews/{digest}.json",
+                                   data=json.dumps(value).encode("utf-8"), overwrite=True)
+
     def save(self, build: BuildState) -> None:
         snapshot_name = f"{build.id}/snapshots/{uuid4().hex}.json"
         payload = build.model_dump(mode="json", by_alias=True)

@@ -15,6 +15,8 @@ class BuildRepository(Protocol):
     def list(self) -> list[BuildState]: ...
 
     def claim_deployment_repair(self, build_id: str, commit: str) -> bool: ...
+    def get_preview(self, build_id: str, digest: str) -> dict | None: ...
+    def save_preview(self, build_id: str, digest: str, value: dict) -> None: ...
 
 
 class InMemoryBuildRepository:
@@ -23,6 +25,13 @@ class InMemoryBuildRepository:
     def __init__(self) -> None:
         self._items: dict[str, BuildState] = {}
         self._deployment_claims: set[tuple[str, str]] = set()
+        self._previews: dict[tuple[str, str], dict] = {}
+
+    def get_preview(self, build_id: str, digest: str) -> dict | None:
+        return self._previews.get((build_id, digest))
+
+    def save_preview(self, build_id: str, digest: str, value: dict) -> None:
+        self._previews[(build_id, digest)] = value
 
     def claim_deployment_repair(self, build_id: str, commit: str) -> bool:
         key = (build_id, commit)

@@ -74,6 +74,13 @@
           <div class="stage-agent"><span>✦</span><div><strong>{{ activeAgent?.name ?? 'Orchestrator' }}</strong><small>Current owner</small></div></div>
         </div>
 
+        @if (previewUrl; as uiPreview) {
+          <div class="stage-footer">
+            <a class="secondary-button" [href]="uiPreview" target="_blank" rel="noopener">Preview UI ↗</a>
+            <span>Interactive demo with sample data. The ZIP includes an offline preview file.</span>
+          </div>
+        }
+
         @switch (currentBuild.stage) {
           @case ('Understand') {
             <div class="stage-body">

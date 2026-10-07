@@ -437,9 +437,15 @@ export class BuildComponent implements OnInit {
   }
 
   get artifactsZipUrl(): string | null {
-    return this.build?.proof?.artifacts && Object.keys(this.build.proof.artifacts).length
+    const proved = this.build?.proof?.artifacts;
+    const artifacts = proved && Object.keys(proved).length ? proved : this.build?.generationFailure?.artifacts;
+    return artifacts && Object.keys(artifacts).length && this.build
       ? `/api/builds/${encodeURIComponent(this.build.id)}/artifacts.zip?rev=${this.build.audit.length}`
       : null;
+  }
+
+  get previewUrl(): string | null {
+    return this.artifactsZipUrl && this.build ? `/api/builds/${encodeURIComponent(this.build.id)}/preview` : null;
   }
 
   refine(): void {

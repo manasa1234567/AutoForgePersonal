@@ -12,5 +12,6 @@ azure-search-documents>=11.6,<12
 PyYAML
 pypdf
 pytest==8.3.5
+esprima==4.0.1
 azure-identity
 azure-storage-blob
