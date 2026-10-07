@@ -1,0 +1,33 @@
+[[package]]
+name = "fastapi"
+version = "0.115.12"
+description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
+name = "uvicorn"
+version = "0.34.2"
+description = "The lightning-fast ASGI server."
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
+name = "pydantic"
+version = "2.11.3"
+description = "Data validation and settings management using Python type annotations"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[metadata]
+lock-version = "1.2"
+python-versions = "^3.11"
+content-hash = "dummy"
+
+[metadata.files]
+fastapi = []
+uvicorn = []
+pydantic = []
