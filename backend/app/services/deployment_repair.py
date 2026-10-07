@@ -7,6 +7,7 @@ import re
 
 from ..models.schemas import DeploymentCallback, SkillProposal
 from ..agents.coder_agent import CoderOutputError
+from ..agents.artifact_limits import MAX_ARTIFACT_FILES
 from .github_publisher import GitHubPublisher
 from .skill_registry import skill_registry
 
@@ -48,14 +49,25 @@ def _safe_report(value):
     if isinstance(value, list):
         return [_safe_report(item) for item in value[:20]]
     if isinstance(value, dict):
-        return {key: _safe_report(item) for key, item in list(value.items())[:40]}
+        return {key: ([_safe_report(path) for path in item[:MAX_ARTIFACT_FILES]]
+                      if key == "candidateArtifactPaths" and isinstance(item, list) else _safe_report(item))
+                for key, item in list(value.items())[:40]}
     return value
+
+
+def platform_packaging_failure(diagnostics: str) -> bool:
+    """Platform checkout failures cannot be repaired by generated app code."""
+    return (".autoforge-platform/" in diagnostics or "Platform packaging tool missing:" in diagnostics) and any(
+        marker in diagnostics for marker in ("bind source path does not exist", "No such file or directory", "can't open file", "Platform packaging tool missing:")
+    )
 
 
 async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
     build = store.get(build_id)
     if not build.proof or not build.blueprint:
         raise RuntimeError("The approved blueprint or generated artifacts are missing.")
+    if platform_packaging_failure(callback.diagnostics):
+        raise RuntimeError("Platform packaging tools are missing; correct the platform branch/checkout. Generated application code cannot repair this failure.")
     previous = dict(build.proof.artifacts)
     original_finding = {
             "severity": "High", "file": "Dockerfile",
@@ -136,6 +148,18 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
             title=build.title, blueprint=build.blueprint, requirements=build.requirements,
             acceptance_criteria=build.acceptance_criteria, artifacts=artifacts,
         )
+        if critic.checks.get("foundry_source_review", "").startswith("Failed: unsubstantiated"):
+            current = store.get(build_id)
+            if not current.deployment_repairing or current.deployment_commit != callback.commit_sha:
+                return
+            current.deployment_repair_review = _safe_report({
+                "attempt": current.deployment_repair_attempts, "reviewer": "Critic evidence validation",
+                "checks": critic.checks, "candidateArtifactPaths": sorted(artifacts),
+                "blockers": [{"severity": "High", "file": None,
+                              "issue": "Critic could not provide source evidence after review correction. Publication stopped; application code was not changed to satisfy unsupported claims."}],
+            })
+            store._build_repository.save(current)
+            raise RuntimeError("Critic review evidence is invalid; correct the reviewer, not application code. Publication stopped.")
         blockers = [item.model_dump() for item in critic.findings if item.severity == "Critical"]
         for name, value in critic.checks.items():
             if value.lower() == "failed":
@@ -169,6 +193,7 @@ async def _repair(store, build_id: str, callback: DeploymentCallback) -> None:
             "findings": [item.model_dump() for item in critic.findings],
             "securityFindings": [item.model_dump() for item in review.findings] if review else [],
             "blockers": blockers,
+            "candidateArtifactPaths": sorted(artifacts),
         }
         # Store the rejected candidate's report separately. Do not replace the
         # approved/published artifacts with unreviewed source.

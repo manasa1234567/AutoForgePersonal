@@ -163,7 +163,7 @@ class CriticAgent:
         # 4. NEVER EXECUTE IF STATIC SAFETY CHECKS FAILED
         # ---------------------------------------------------------
 
-        if any(value == "Failed" for value in checks.values()):
+        if any(value == "Failed" or value.startswith("Failed:") for value in result.checks.values()):
             return CriticResult(
                 summary=(
                     result.summary
@@ -748,6 +748,7 @@ class CriticAgent:
             "approvedRequirements": requirements,
             "acceptanceCriteria": acceptance_criteria,
             "artifacts": artifacts,
+            "availableArtifactPaths": sorted(artifacts),
             "staticChecks": checks,
             "staticFindings": [
                 finding.model_dump(by_alias=True)
@@ -788,6 +789,7 @@ array of:
   file: string|null,
   issue: string,
   recommendation: string
+  evidence: string (exact source excerpt from the named submitted file)
 }
 
 requirementCoverage:
@@ -798,6 +800,15 @@ array of tests that must be run in the isolated sandbox
 
 Report only concrete issues traceable to the submitted source
 or specification.
+
+Every finding naming a file must use an exact availableArtifactPaths entry
+from the supplied artifacts. Every
+High or Critical source finding must quote an exact source excerpt from that
+file in evidence. Explain the actual unsafe operation and its input path;
+"may lead to injection" or absent generic sanitization alone does not establish
+a Critical vulnerability. Respect validation already provided by the framework
+and schemas. Do not invent paths, modules or database code. If no concrete
+defect is supported by the submitted files, return an empty findings array.
 
 A missing runtime sandbox is not proof of success.
 """
@@ -853,6 +864,30 @@ A missing runtime sandbox is not proof of success.
                         mode="local-static-review+foundry-response-invalid",
                     )
 
+            evidence_errors = self._review_evidence_issues(data, artifacts)
+            if evidence_errors:
+                response = await agent.run(json.dumps({
+                    "reviewCorrection": "Validate your findings against the supplied artifacts. Remove unsupported claims, or name the actual file and quote exact source evidence. Return the complete review JSON; do not invent a vulnerability.",
+                    "invalidFindings": evidence_errors,
+                    "previousReview": data,
+                    "artifacts": artifacts,
+                    "availableArtifactPaths": sorted(artifacts),
+                }, ensure_ascii=False))
+                try:
+                    data = SpecAgent._parse_json_response(str(response))
+                    evidence_errors = self._review_evidence_issues(data, artifacts)
+                except ValueError:
+                    evidence_errors = ["Corrected review did not return valid JSON."]
+                if evidence_errors:
+                    return CriticResult(
+                        summary="Foundry source review could not substantiate its findings; review must be corrected before publication.",
+                        findings=local_findings,
+                        requirement_coverage=[], test_plan=[],
+                        checks={**checks, "foundry_source_review": "Failed: unsubstantiated review evidence"},
+                        runtime_status="Not run: source review evidence is invalid",
+                        mode="foundry-review-evidence-invalid",
+                    )
+
             findings = self._normalize_findings(
                 data.get("findings"),
                 local_findings,
@@ -893,6 +928,25 @@ A missing runtime sandbox is not proof of success.
     # =============================================================
     # HELPERS
     # =============================================================
+
+    @staticmethod
+    def _review_evidence_issues(data: dict[str, Any], artifacts: dict[str, str]) -> list[str]:
+        findings = data.get("findings")
+        if not isinstance(findings, list):
+            return ["findings must be an array."]
+        issues = []
+        for finding in findings:
+            if not isinstance(finding, dict):
+                issues.append("A finding is not an object.")
+                continue
+            path = finding.get("file")
+            if path and (not isinstance(path, str) or path not in artifacts):
+                issues.append(f"Unknown artifact path: {str(path)[:200]}")
+            elif finding.get("severity") in {"High", "Critical"}:
+                evidence = finding.get("evidence")
+                if not path or not isinstance(evidence, str) or not evidence.strip() or evidence not in artifacts[path]:
+                    issues.append(f"Blocking finding lacks matching source evidence: {str(path)[:200]}")
+        return issues[:40]
 
     @staticmethod
     def _normalize_findings(
@@ -945,6 +999,7 @@ A missing runtime sandbox is not proof of success.
                                 "the approved requirement.",
                             )
                         )[:1000],
+                        evidence=str(item.get("evidence", ""))[:2000],
                     )
                 )
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from app.agents.coder_agent import CoderAgent, CoderOutputError, CoderResult
 from app.agents.deployment_contract import dependency_manifest_issues
-from app.services.deployment_repair import repair_deployment
+from app.services.deployment_repair import repair_deployment, platform_packaging_failure
 
 
 class DependencyChecks(unittest.TestCase):
@@ -77,6 +77,24 @@ class DependencyChecks(unittest.TestCase):
 
 
 class OutputRetry(unittest.IsolatedAsyncioTestCase):
+    async def test_platform_missing_tool_does_not_invoke_coder(self):
+        build, store, callback = self.fixture()
+        callback.diagnostics = 'docker: bind source path does not exist: /workspace/.autoforge-platform/scripts/resolve-generated-npm-locks.cjs'
+        await repair_deployment(store, build.id, callback)
+        store._agent_service.run_coder_agent.assert_not_awaited()
+        self.assertIn('Platform packaging tools', build.error)
+
+    async def test_unsubstantiated_review_does_not_publish_or_rewrite_application(self):
+        build, store, callback = self.fixture()
+        store._agent_service.run_coder_agent.return_value = CoderResult(files={'app.py': 'candidate'}, mode='foundry-agent')
+        store._agent_service.run_critic_agent.return_value.checks = {'foundry_source_review': 'Failed: unsubstantiated review evidence'}
+        with patch('app.services.deployment_repair.GitHubPublisher.publish', new_callable=AsyncMock) as publish:
+            await repair_deployment(store, build.id, callback)
+        publish.assert_not_awaited()
+        self.assertEqual(store._agent_service.run_coder_agent.await_count, 1)
+        self.assertEqual(build.proof.artifacts, {'app.py': 'original'})
+        self.assertEqual(build.deployment_repair_review['candidateArtifactPaths'], ['app.py'])
+
     async def test_unchanged_repair_keeps_original_failure_and_does_not_publish(self):
         build, store, callback = self.fixture()
         callback.diagnostics = "Module not found: Can't resolve './App' in '/app/frontend/src'"

@@ -156,6 +156,7 @@ class CriticFinding(ApiModel):
     file: str | None = None
     issue: str
     recommendation: str
+    evidence: str = ""
 
 
 class ProofResult(ApiModel):

@@ -1351,7 +1351,7 @@ class Orchestrator:
     # ============================================================
 
     def accept_deployment_callback(self, build_id: str, callback: DeploymentCallback) -> tuple[BuildState, bool]:
-        from .deployment_repair import clean_diagnostics
+        from .deployment_repair import clean_diagnostics, platform_packaging_failure
         build = self.get(build_id)
         if build.feature_branch != callback.branch:
             raise ValueError("Deployment callback branch does not match this build.")
@@ -1376,6 +1376,10 @@ class Orchestrator:
             "message": clean_diagnostics(callback.message),
             "diagnostics": clean_diagnostics(callback.diagnostics),
         })
+        if callback.status == "failed" and callback.phase == "packaging" and platform_packaging_failure(callback.diagnostics):
+            callback = callback.model_copy(update={"message":
+                "Platform packaging tools are missing. Verify the platform branch/checkout; application repair was not started. " + callback.message})
+            return self.record_deployment(build_id, callback), False
         if callback.phase == "repair_timeout":
             build.deployment_repairing = False
         # Legacy workflows still report status, but cannot safely trigger repair

@@ -25,6 +25,18 @@ def blueprint():
 
 
 class DeploymentRegressions(unittest.TestCase):
+    def test_platform_checkout_error_does_not_consume_source_repair_budget(self):
+        store = Orchestrator(build_repository=SnapshotRepository())
+        build = store.create(BuildCreate(source_type='usecase', title='Example', source_text='Build an app'))
+        build.feature_branch = 'feature/example'
+        build.deployment_commit = 'a' * 40
+        store._build_repository.save(build)
+        result, queued = store.accept_deployment_callback(build.id, DeploymentCallback(
+            branch=build.feature_branch, commit_sha=build.deployment_commit, status='failed', phase='packaging',
+            diagnostics='docker: bind source path does not exist: /workspace/.autoforge-platform/scripts/resolve-generated-npm-locks.cjs'))
+        self.assertFalse(queued)
+        self.assertEqual(result.deployment_repair_attempts, 0)
+        self.assertIn('Platform packaging tools', result.error)
     def test_root_application_not_copied_with_backend_manifest_is_rejected(self):
         files = {
             "Dockerfile": 'FROM python:3.11 AS deps\nCOPY backend/ /app/backend/\n'
